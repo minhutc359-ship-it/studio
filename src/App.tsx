@@ -9,6 +9,7 @@ import {
 import { useStudioStore, type ChatEntry, type ProviderId, type ScreenMode, type StudioSettings } from './store'
 import { seatReducer, type Seat } from './domain/seatManager'
 import { connectProvider, stopProvider } from './liveProvider'
+import { TIKFINITY_DEFAULT } from './domain/providerConfig'
 
 const connectionLabels = {
   waiting: 'Chờ kết nối', connecting: 'Đang mở kết nối', connected: 'Đã kết nối',
@@ -70,7 +71,7 @@ function AppShell() {
 function SetupPage() {
   const { settings, updateSettings, connection, setConnection, addMockViewer, sendMockGift, addMockLikes } = useStudioStore()
   const connectionDetail = useStudioStore((state) => state.connectionDetail)
-  const [token, setToken] = useState('')
+  const [providerInput, setProviderInput] = useState('')
   const [section, setSection] = useState('Kết nối')
   const [saved, setSaved] = useState(false)
   const [importMessage, setImportMessage] = useState('')
@@ -139,16 +140,23 @@ function SetupPage() {
             <section className="settings-panel">
               <div className="panel-title"><span className="step-number">01</span><div><h3>Nguồn sự kiện</h3><p>Chọn nơi gửi chat, quà và lượt thích.</p></div></div>
               <div className="provider-options">
-                {(['mock', 'tikfinity', 'tiktools'] as ProviderId[]).map((provider) => <button key={provider} onClick={() => updateSettings({ provider })} className={`provider-option ${settings.provider === provider ? 'chosen' : ''}`}><span className="provider-icon">{provider === 'mock' ? <WandSparkles size={18} /> : provider === 'tikfinity' ? <AudioLines size={18} /> : <Link2 size={18} />}</span><span className="provider-text"><b>{providerLabels[provider]}</b><small>{provider === 'mock' ? 'Không cần tài khoản · sẵn sàng' : provider === 'tikfinity' ? 'WebSocket local · cần kiểm chứng' : 'WebSocket cloud · cần token phiên'}</small></span><i className="radio-dot" /></button>)}
+                {(['mock', 'tikfinity', 'tiktools'] as ProviderId[]).map((provider) => <button key={provider} onClick={() => { if (provider !== settings.provider) { setProviderInput(''); updateSettings({ provider }) } }} className={`provider-option ${settings.provider === provider ? 'chosen' : ''}`}><span className="provider-icon">{provider === 'mock' ? <WandSparkles size={18} /> : provider === 'tikfinity' ? <AudioLines size={18} /> : <Link2 size={18} />}</span><span className="provider-text"><b>{providerLabels[provider]}</b><small>{provider === 'mock' ? 'Không cần tài khoản · sẵn sàng' : provider === 'tikfinity' ? 'WebSocket local · cần kiểm chứng' : 'WebSocket cloud · cần token phiên'}</small></span><i className="radio-dot" /></button>)}
               </div>
-              <label className="field-label" htmlFor="username">Tên TikTok <span>không bao gồm @</span></label>
-              <div className="input-prefix"><span>@</span><input id="username" value={settings.username} onChange={(event) => updateSettings({ username: event.target.value.replace(/^@/, '').trim() })} placeholder="tenkenhcuaban" autoComplete="off" /></div>
-              {settings.provider === 'tiktools' && <><label className="field-label" htmlFor="provider-token">JWT ngắn hạn</label><input id="provider-token" type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} /><p className="provider-warning">JWT chỉ giữ trong bộ nhớ phiên. Tạo JWT cho kênh trong TikTools.</p></>}
-              {settings.provider === 'tikfinity' && <p className="provider-warning">Mở TikFinity trên cùng máy và kết nối phòng LIVE trước.</p>}
+              {settings.provider === 'tiktools' && <>
+                <label className="field-label" htmlFor="username">Kênh TikTok <span>bỏ trống nếu link WebSocket đã có kênh</span></label>
+                <input id="username" value={settings.username} onChange={(event) => updateSettings({ username: event.target.value.trim().replace(/^@/, '') })} placeholder="@tenkenh hoặc https://www.tiktok.com/@tenkenh/live" autoComplete="off" />
+              </>}
+              {settings.provider !== 'mock' && <>
+                <label className="field-label" htmlFor="provider-input">{settings.provider === 'tikfinity' ? 'Link WebSocket TikFinity' : 'JWT, API key hoặc link WebSocket TikTools'}</label>
+                <input id="provider-input" type="password" autoComplete="off" spellCheck={false} value={providerInput} onChange={(event) => setProviderInput(event.target.value)} placeholder={settings.provider === 'tikfinity' ? TIKFINITY_DEFAULT : 'Dán token hoặc wss://api.tik.tools/…'} />
+                <p className="provider-warning">{settings.provider === 'tikfinity'
+                  ? `Mở TikFinity và kết nối phòng LIVE trước. Để trống để dùng ${TIKFINITY_DEFAULT}`
+                  : 'Dán link WebSocket đầy đủ hoặc nhập kênh và token. Ưu tiên JWT ngắn hạn. Token và link chỉ giữ trong bộ nhớ phiên.'}</p>
+              </>}
               <div className="button-row">
                 <button className="button button-primary" onClick={() => {
                   if (settings.provider === 'mock') setConnection('connected')
-                  else { connectProvider(settings, token); setToken('') }
+                  else if (connectProvider(settings, providerInput)) setProviderInput('')
                 }}><Radio size={15} />{settings.provider === 'mock' ? 'Bật Mock provider' : 'Kết nối'}</button>
                 {settings.provider !== 'mock' && <button className="button button-quiet" onClick={stopProvider}>Ngắt kết nối</button>}
                 <span role="status" className="connection-detail">{connectionLabels[connection]}{connectionDetail && ` · ${connectionDetail}`}</span>
@@ -198,7 +206,7 @@ function SeatSettings() {
 }
 
 function ChatSettings({ settings, updateSettings }: { settings: StudioSettings; updateSettings: (patch: Partial<StudioSettings>) => void }) {
-  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>!join</code><code>!leave</code><code>!seat 1–12</code><code>!react heart</code><code>!help</code></div></section></div>
+  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>!join</code><code>!leave</code><code>!seat 1–12</code><code>!react heart 2</code><code>!react wave 2</code><code>!react cheer 2</code><code>!help</code></div></section></div>
 }
 
 function BroadcastSettings() {
@@ -291,6 +299,11 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
   const endMockDrag = () => { dragOrigin.current = null }
   const act = (event: string) => {
     const mock = { id: `canvas-${Date.now()}`, name: 'Khách xem', avatar: '🧑🏻‍🚀' }
+    if (event.startsWith('reaction-')) {
+      const [source, target] = seatState.seats.filter((seat) => seat.viewer)
+      if (source?.viewer && target) addChat(source.viewer, `!react ${event.slice(9)} ${target.id}`)
+      return
+    }
     if (event === 'join') addMockViewer()
     if (event === 'gift') sendMockGift()
     if (event === 'like') addMockLikes()
@@ -308,13 +321,13 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
   return <main className={`canvas-page ${preview ? 'preview-page' : ''} ${settings.reducedMotion ? 'reduced-motion' : ''}`}>
     <div className="canvas-heading"><div><span className="eyebrow">{preview ? 'PREVIEW MODE' : 'BROADCAST CANVAS'}</span><h1>{preview ? 'Rạp đang mở cửa' : 'Đêm xem chung'}</h1></div><div className="canvas-heading-actions"><span className="live-badge"><i />{preview ? 'PREVIEW' : settings.provider === 'mock' ? 'DEMO' : connectionLabels[connection]}</span><button hidden={settings.provider !== 'mock'} className="icon-button" title="Mở Mock Event Deck" aria-label="Mở Mock Event Deck" onClick={() => setMockOpen(!mockOpen)}><WandSparkles size={17} /></button><button className="icon-button" title={quietMode ? 'Bật lại hiệu ứng' : 'Chế độ yên tĩnh'} onClick={toggleQuietMode}>{quietMode ? <VolumeX size={17} /> : <Volume2 size={17} />}</button><button className="icon-button" title={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'} aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'} onClick={() => void goFullscreen()}>{fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button></div></div>
 
-    <section className="cinema-layout" aria-label="Canvas rạp chiếu" ref={cinemaRef}>
+    <section className="cinema-layout theater-scene" aria-label="Canvas rạp chiếu" ref={cinemaRef}>
       <div className="fullscreen-tools"><button hidden={settings.provider !== 'mock'} className="fullscreen-mock-launcher" onClick={() => setMockOpen(!mockOpen)}><WandSparkles size={14} /> Mock Event</button><button className="fullscreen-exit" onClick={() => void goFullscreen()}><Minimize2 size={14} /> Thoát toàn màn hình</button></div>
       <aside className="action-rail">
         <div className="rail-title"><Sparkles size={15} /><span>HƯỚNG DẪN</span></div>
         <div className="action-item"><span className="action-emoji">🍿</span><span><b>Cùng xem LIVE</b><small>Thưởng thức nội dung chung</small></span></div>
         <div className="action-item"><span className="action-emoji">💬</span><span><b>Trò chuyện</b><small>Bình luận, chia sẻ cảm xúc</small></span></div>
-        <div className="action-item"><span className="action-emoji">💗</span><span><b>Thả reaction</b><small>Gõ !react heart</small></span></div>
+        <div className="action-item"><span className="action-emoji">💗</span><span><b>Thả reaction</b><small>Gõ !react heart 2 để gửi tim đến ghế 2</small></span></div>
         <div className="action-item"><span className="action-emoji">🎁</span><span><b>Chọn ghế</b><small>Gõ !join để tham gia</small></span></div>
         <div className="rail-divider" />
         <div className="rail-title rail-title-small">{observedGifts.length ? 'QUÀ ĐÃ NHẬN' : 'ĐANG CHỜ QUÀ'}</div>
@@ -323,8 +336,8 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
       </aside>
 
       <div className="stage-column">
-        <div className="stage-frame">
-          <div className="stage-topline"><span><i /> ĐANG PHÁT</span><span>{settings.username ? `@${settings.username}` : 'VIEWING PARTY'}</span></div>
+        <div className="stage-frame"><div className="marquee-lights" aria-hidden="true" />
+          <div className="stage-topline"><span><i /> ĐANG PHÁT</span><span>{/^[\w.]+$/.test(settings.username) ? `@${settings.username}` : 'VIEWING PARTY'}</span></div>
           <div className={`screen-content mode-${settings.screenMode}`}>
             {mediaSrc ? <video key={mediaSrc} src={mediaSrc} controls playsInline muted={quietMode} onError={() => setMediaError(true)} /> : settings.screenMode === 'local-video' ? <label className="screen-upload"><Film size={30} /><b>{fileMessage || 'Chọn video trong phiên này'}</b><small>Video chỉ phát trong trình duyệt hiện tại</small><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label> : settings.screenMode === 'external' ? <div className="external-screen"><MonitorPlay size={32} /><b>Vùng ghép nội dung OBS</b><small>Đặt nguồn game/video bên dưới canvas trong phần mềm phát sóng.</small></div> : <div className="screen-art"><div className="screen-art-stars">✦　·　✧　·　✦</div><span className="screen-kicker">THEATER No. 01</span><div className="screen-title">Đêm xem<br /><em>chung</em></div><div className="screen-filmstrip"><span>◈</span><i /><span>◈</span><i /><span>◈</span></div><div className="screen-caption">MỘT CHIẾC RẠP · RẤT NHIỀU CẢM XÚC</div><div className="screen-orbit orbit-a" /><div className="screen-orbit orbit-b" /></div>}
             {(mediaError || (settings.screenMode === 'direct-url' && !mediaSrc)) && <p className="media-error" role="alert">Không phát được video. Kiểm tra URL hoặc chọn định dạng khác.</p>}
@@ -342,7 +355,10 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
           <span className="mock-toolbar-dot" /><b>MOCK EVENT DECK</b><small>Kéo để di chuyển</small>
           <button title="Đóng bảng sự kiện" aria-label="Đóng bảng sự kiện" onClick={() => setMockOpen(false)}><X size={14} /></button>
         </div>
-        <div className="mock-event-actions"><button onClick={() => act('join')}><Plus size={14} /> !join</button><button onClick={() => act('leave')}><X size={14} /> !leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
+        <div className="mock-event-actions">
+          <button disabled={occupied < 2} onClick={() => act('reaction-heart')}>💗 Gửi tim</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-wave')}>👋 Vẫy chào</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button><button onClick={() => act('join')}><Plus size={14} /> !join</button><button onClick={() => act('leave')}><X size={14} /> !leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
       </div>}
     </section>
 
@@ -362,7 +378,9 @@ function SeatTile({ seat, compact = false }: { seat: Seat; compact?: boolean }) 
   }
   return <button className={`seat-tile ${seated ? 'occupied' : ''} ${seat.status === 'locked' ? 'locked' : ''} ${seat.status === 'inactive' ? 'inactive' : ''} ${compact ? 'seat-compact' : ''}`} onClick={lockSeat} aria-label={`Ghế ${seat.id}${seated ? `, ${seat.viewer?.name}` : seat.status === 'locked' ? ', đã khóa' : ', trống'}`} title={seated ? seat.viewer?.name : seat.status === 'locked' ? 'Nhấn để mở khóa' : 'Ghế trống · nhấn để khóa'}>
     {bubble && <span key={bubble.id} className="seat-chat-bubble">{bubble.text}</span>}
-    <span className="seat-number">{String(seat.id).padStart(2, '0')}</span><span key={animation?.id ?? seat.viewer?.id} className={`seat-avatar ${seated ? `audience-sprite sprite-${(seat.id - 1) % 4} animation-${animation?.kind ?? 'idle'}` : ''}`}>{seated ? null : seat.status === 'locked' ? <LockKeyhole size={14} /> : '✦'}</span><span className="seat-name">{seat.viewer ? seat.viewer.name : seat.status === 'locked' ? 'Đã khóa' : 'Ghế trống'}</span>{seat.status === 'inactive' && <span className="inactive-mark">●</span>}
+    <span className="seat-number">{String(seat.id).padStart(2, '0')}</span><span key={animation?.id ?? seat.viewer?.id} style={seated ? {
+      backgroundPosition: `${((seat.id - 1) % 4) * 100 / 3}% ${Math.floor((seat.id - 1) / 4) * 50}%`,
+    } : undefined} className={`seat-avatar ${seated ? `audience-sprite  animation-${animation?.kind ?? 'idle'}` : ''}`}>{seated ? null : seat.status === 'locked' ? <LockKeyhole size={14} /> : '✦'}</span><span className="seat-back" aria-hidden="true" /><span className="seat-name">{seat.viewer ? seat.viewer.name : seat.status === 'locked' ? 'Đã khóa' : 'Ghế trống'}</span>{seat.status === 'inactive' && <span className="inactive-mark">●</span>}
   </button>
 }
 

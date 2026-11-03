@@ -1,3 +1,4 @@
+import { providerUrl } from './domain/providerConfig'
 import { useStudioStore, type StudioSettings } from './store'
 
 type Payload = Record<string, unknown>
@@ -13,17 +14,15 @@ export function stopProvider() {
   disconnect = undefined
 }
 
-export function connectProvider(settings: StudioSettings, token: string) {
+export function connectProvider(settings: StudioSettings, input: string) {
   stopProvider()
   if (settings.provider === 'mock') return
-  const url = new URL(settings.provider === 'tikfinity' ? 'ws://localhost:21213/' : 'wss://api.tik.tools/')
-  if (settings.provider === 'tiktools') {
-    if (!/^[\w.]{1,32}$/.test(settings.username) || !token.trim()) {
-      useStudioStore.setState({ connection: 'error', connectionDetail: 'Nhập tên TikTok và JWT phiên trước khi kết nối.' })
-      return
-    }
-    url.searchParams.set('uniqueId', settings.username)
-    url.searchParams.set('jwtKey', token.trim())
+  let url: URL
+  try {
+    url = providerUrl(settings.provider, settings.username, input)
+  } catch (error) {
+    useStudioStore.setState({ connection: 'error', connectionDetail: error instanceof Error ? error.message : 'Cấu hình kết nối không hợp lệ.' })
+    return false
   }
 
   let socket: WebSocket
@@ -103,4 +102,5 @@ export function connectProvider(settings: StudioSettings, token: string) {
     status('waiting')
   }
   open()
+  return true
 }

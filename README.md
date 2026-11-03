@@ -28,8 +28,8 @@ npm run build
 
 ## Kết nối phòng thật
 
-- **TikFinity:** mở ứng dụng TikFinity trên máy livestream, kết nối TikTok LIVE, rồi chọn TikFinity Local và bấm **Kết nối**. Studio mở WebSocket localhost cổng 21213.
-- **TikTools:** tạo JWT ngắn hạn giới hạn cho kênh theo [tài liệu TikTools](https://tik.tools/docs), nhập tên kênh và JWT rồi bấm **Kết nối**. Khi JWT hết hạn, tạo JWT mới và kết nối lại.
+- **TikFinity:** mở ứng dụng TikFinity trên máy livestream, kết nối TikTok LIVE, rồi chọn TikFinity Local và bấm **Kết nối**. Studio mặc định mở WebSocket localhost cổng 21213. Nếu dùng bridge riêng, dán link WebSocket thay thế. Địa chỉ ngoài loopback cần dùng `wss://`.
+- **TikTools:** tạo JWT ngắn hạn giới hạn cho kênh theo [tài liệu TikTools](https://tik.tools/docs), nhập tên kênh hoặc link TikTok rồi dán JWT hoặc API key. Bạn cũng có thể dán một link WebSocket đầy đủ trên `wss://api.tik.tools/` có sẵn `uniqueId` và `jwtKey` hoặc `apiKey`. Bấm **Kết nối**. Khi JWT hết hạn, tạo JWT mới và kết nối lại.
 - Giữ Setup và Live canvas trong cùng tab, dùng Window Capture để lấy trạng thái phiên. Mở socket thành công mới xác nhận đường truyền. Hãy thử chat `!join`, quà và lượt thích từ phòng thật trước khi đưa lên sóng.
 
 ## Giới hạn đã biết
@@ -41,3 +41,6 @@ npm run build
 - Art trong bản demo dùng CSS và emoji; không dùng nhân vật/logo thương mại.
 
 Xem đặc tả sản phẩm tại [VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md](./VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md).
+### Tương tác giữa các ghế
+
+Sau khi vào ghế bằng `!join`, khán giả có thể gõ `!react heart 2`, `!react wave 2` hoặc `!react cheer 2` để gửi tim, vẫy chào hoặc cổ vũ người ở ghế 2. Bỏ số ghế để thả biểu cảm cho cả rạp. Trong Mock Event Deck, thêm hai khán giả để thử các nút tương tác.

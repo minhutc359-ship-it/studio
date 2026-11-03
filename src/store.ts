@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { parseCommand } from './domain/events'
+import { parseCommand, type Reaction } from './domain/events'
 import { createSeatState, seatReducer, type SeatState, type Viewer } from './domain/seatManager'
 
 export type ProviderId = 'mock' | 'tikfinity' | 'tiktools'
@@ -50,7 +50,10 @@ export interface SeatBubble {
   text: string
 }
 
-export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift'
+export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart'
+
+const reactionIcons: Record<Reaction, string> = { heart: '💗', cheer: '👏', wave: '👋' }
+const reactionLabels: Record<Reaction, string> = { heart: 'gửi tim', cheer: 'cổ vũ', wave: 'vẫy chào' }
 
 export interface ObservedGift {
   name: string
@@ -65,6 +68,7 @@ interface StudioState {
   mockAudienceIds: string[]
   chat: ChatEntry[]
   seatBubbles: Record<string, SeatBubble>
+  reactionCooldowns: Record<number, number>
   seatAnimations: Record<string, { id: string; kind: SeatAnimation }>
   highlightedGiftId: string | null
   observedGifts: ObservedGift[]
@@ -116,12 +120,13 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     { id: 'welcome-2', name: 'Mây Nhỏ', avatar: '🧚🏼‍♀️', text: 'Tối nay xem gì đây mọi người? ✨', kind: 'chat', time: timeLabel() },
   ],
   seatBubbles: {},
+  reactionCooldowns: {},
   seatAnimations: {},
   highlightedGiftId: null,
   observedGifts: [],
   connection: 'waiting',
   connectionDetail: '',
-  resetSession: () => set({ seatState: createSeatState(), mockAudienceIds: [], chat: [], seatBubbles: {}, seatAnimations: {}, highlightedGiftId: null, observedGifts: [], viewerCount: 0, likes: 0, gifts: 0 }),
+  resetSession: () => set({ seatState: createSeatState(), mockAudienceIds: [], chat: [], seatBubbles: {}, reactionCooldowns: {}, seatAnimations: {}, highlightedGiftId: null, observedGifts: [], viewerCount: 0, likes: 0, gifts: 0 }),
   viewerCount: 0,
   likes: 0,
   gifts: 0,
@@ -137,6 +142,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const command = parseCommand(text)
     let seatState = state.seatState
     let response: string | undefined
+    let reactionSeats: typeof seatState.seats = []
+    let reactionSource: number | undefined
     let kind: ChatEntry['kind'] = 'chat'
 
     if (command?.kind === 'join') {
@@ -156,10 +163,22 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       response = assigned?.id === command.seatId ? `đã chọn ghế ${command.seatId}` : assigned ? `ghế ${command.seatId} đã có người, bạn đang ở ghế ${assigned.id}` : before === seatState ? 'không thể chọn ghế này' : 'đã vào hàng chờ'
       kind = 'system'
     } else if (command?.kind === 'react') {
-      response = command.reaction === 'heart' ? 'thả tim cho cả rạp 💗' : 'cả rạp vỗ tay 👏'
+      const source = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
+      const target = seatState.seats.find((seat) => seat.id === command.seatId)
+      if (!source) response = command.seatId
+        ? 'Gõ !join để có ghế rồi gửi biểu cảm.'
+        : `${reactionIcons[command.reaction]} ${reactionLabels[command.reaction]} cả rạp`
+      else if (target?.id === source.id) response = 'Hãy chọn ghế của một khán giả khác.'
+      else if (command.seatId && !target?.viewer) response = `Ghế ${command.seatId} chưa có người.`
+      else {
+        if (Date.now() - (state.reactionCooldowns[source.id] ?? -Infinity) < 2500) return
+        reactionSource = source.id
+        reactionSeats = target ? [source, target] : [source]
+        response = `${reactionIcons[command.reaction]} ${reactionLabels[command.reaction]} ${target ? `ghế ${target.id}` : 'cả rạp'}`
+      }
       kind = 'reaction'
     } else if (command?.kind === 'help') {
-      response = 'Lệnh: !join · !leave · !seat 1–12 · !react heart'
+      response = 'Lệnh: !join · !leave · !seat 1–12 · !react heart/cheer/wave [ghế]'
       kind = 'system'
     } else {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
@@ -171,7 +190,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const bubbleId = `${viewer.id}-${Date.now()}`
     const alreadySeated = state.seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
     const newlySeated = !alreadySeated && seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
-    const animationKind: SeatAnimation | undefined = newlySeated ? 'enter' : seated ? 'talk' : command?.kind === 'react' ? 'cheer' : undefined
+    const animationKind: SeatAnimation | undefined = newlySeated ? 'enter' : seated ? 'talk' : undefined
     const animationId = `${viewer.id}-${Date.now()}-${Math.random()}`
     const isMockLeave = command?.kind === 'leave' && state.mockAudienceIds.includes(viewer.id)
     set({
@@ -181,6 +200,29 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       ...(seated ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: text.slice(0, 64) } } } : {}),
       ...(animationKind ? { seatAnimations: { ...state.seatAnimations, [viewer.id]: { id: animationId, kind: animationKind } } } : {}),
     })
+    if (command?.kind === 'react' && reactionSource !== undefined) {
+      const reaction = command.reaction
+      const source = reactionSource
+      set((current) => ({
+        reactionCooldowns: { ...current.reactionCooldowns, [source]: Date.now() },
+        seatBubbles: {
+          ...current.seatBubbles,
+          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, {
+            id: animationId,
+            text: seat.id === source ? `${reactionIcons[reaction]} ${command.seatId ? `→ Ghế ${command.seatId}` : ''}` : `${reactionIcons[reaction]} Từ ghế ${source}`,
+          }])),
+        },
+        seatAnimations: {
+          ...current.seatAnimations,
+          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, { id: animationId, kind: reaction }])),
+        },
+      }))
+      for (const seat of reactionSeats) {
+        const id = seat.viewer!.id
+        window.setTimeout(() => get().clearSeatBubble(id, animationId), 3600)
+        window.setTimeout(() => get().clearSeatAnimation(id, animationId), 1600)
+      }
+    }
     if (seated) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
     if (animationKind) window.setTimeout(() => get().clearSeatAnimation(viewer.id, animationId), animationKind === 'enter' ? 1400 : 1100)
   },
