@@ -247,3 +247,177 @@ input::placeholder { color: #746d70; }
   .mock-event-popover { width: min(300px, calc(100vw - 20px)); }
   .seat-chat-bubble { max-width: min(150px, 42vw); font-size: 8px; }
 }
+[hidden] { display: none !important; }
+.connection-pill.error { color: #ffb5b5; }
+.connection-pill.connecting { color: #f0c578; }
+.media-error { position: absolute; inset: auto 8px 36px; padding: 10px; background: #39212a; color: #ffe0e0; }
+.seat-tile:focus-visible, .provider-option:focus-visible { outline: 2px solid #6cdae5; outline-offset: 2px; }
+.seat-tile { transition: border-color .2s, background-color .2s; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Warm marquee lighting over a violet auditorium. */
+.theater-scene {
+  background: radial-gradient(ellipse at 50% 18%, #523354 0%, #241a37 54%, #120f20 100%);
+  border: 1px solid #986342;
+  box-shadow: inset 0 0 36px #100a19, 0 16px 50px #100b19;
+  border-radius: 18px;
+  padding: clamp(8px, 1vw, 16px);
+}
+.theater-scene .action-rail, .theater-scene .chat-rail {
+  background: linear-gradient(160deg, #342348, #1e172d 74%);
+  border: 1px solid #b17b52;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 2px #ffd58e18, 0 0 18px #e69a4d20;
+}
+.theater-scene .rail-title, .theater-scene .chat-heading h2 { color: #ffe0a0; }
+.stage-frame {
+  position: relative;
+  border: 1px solid #d7a666;
+  box-shadow: 0 0 16px #ffc17242, inset 0 0 0 2px #613e3d;
+  border-radius: 14px;
+  background: repeating-linear-gradient(105deg, #48182b, #832640 16px, #50172b 36px);
+}
+.marquee-lights {
+  position: absolute;
+  inset: -5px 12px auto;
+  height: 10px;
+  pointer-events: none;
+  background: radial-gradient(circle, #fff1bb 0 2px, #e6a55b88 3px, transparent 6px) repeat-x;
+  background-size: 24px 10px;
+}
+.theater-scene .screen-content {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  outline: 1px solid #dca95f;
+}
+.theater-scene .audience-section {
+  background: repeating-linear-gradient(0deg, #34243e 0 2px, #4a344d 2px 33px, #523953 34px);
+  border-radius: 0 0 14px 14px;
+  padding-inline: clamp(3px, 1vw, 12px);
+}
+.seat-back { display: none; }
+.theater-scene .seat-tile {
+  height: clamp(60px, 7.5vw, 117px);
+  border: 0;
+  background: none;
+  isolation: isolate;
+  justify-content: end;
+  padding-bottom: 8px;
+}
+.theater-scene .seat-tile::after { display: none; }
+.theater-scene .seat-back {
+  display: block;
+  position: absolute;
+  inset: auto 1px 0;
+  height: 47%;
+  background: linear-gradient(180deg, #a83b55, #672239 45%, #351422);
+  border: 1px solid #d39062;
+  border-radius: 38% 38% 12% 12% / 35% 35% 12% 12%;
+  box-shadow: inset 0 3px 5px #ffbda750, 0 4px 6px #170e20;
+  z-index: -1;
+}
+.theater-scene .seat-tile:hover .seat-back { border-color: #ffe0a0; }
+.theater-scene .seat-tile.locked .seat-back { filter: saturate(.25); }
+.theater-scene .seat-avatar.audience-sprite {
+  position: absolute;
+  bottom: 29%;
+  width: min(100%, clamp(40px, 6.2vw, 96px));
+  height: auto;
+  aspect-ratio: 1;
+  background-image: url('/assets/cinema-audience.webp');
+  background-size: 400% 300%;
+  background-repeat: no-repeat;
+  z-index: -2;
+  opacity: 1;
+}
+.theater-scene .seat-number {
+  inset: auto auto 26%;
+  color: #ffe0a0;
+  border: 1px solid #bc8653;
+  border-radius: 50%;
+  min-width: 1.6em;
+  background: #391823;
+  font-size: clamp(7px, .8vw, 11px);
+}
+.theater-scene .seat-name { font-size: clamp(7px, .85vw, 12px); }
+.theater-scene .seat-compact .seat-name { visibility: hidden; }
+.settings-seat-grid .seat-avatar.audience-sprite {
+  background-image: url('/assets/cinema-audience.webp');
+  background-size: 400% 300%;
+  width: 36px;
+  height: 36px;
+}
+
+.seat-avatar.animation-wave {
+  transform-origin: center bottom;
+  animation: seat-wave 1.4s ease-in-out both;
+}
+.seat-avatar.animation-heart {
+  animation: seat-heart 1.4s ease-in-out both;
+}
+@keyframes seat-wave {
+  0%, 100% { transform: rotate(0); }
+  20%, 60% { transform: rotate(-9deg); }
+  40%, 80% { transform: rotate(9deg); }
+}
+@keyframes seat-heart {
+  0%, 100% { transform: translateY(0) scale(1); }
+  30%, 65% { transform: translateY(-7px) scale(1.08); filter: drop-shadow(0 0 9px #ff9cbf); }
+  50% { transform: translateY(-2px) scale(1); }
+}
+.mock-event-actions button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+/* A transparent proscenium leaves the active video and its controls visible. */
+.theater-scene .stage-frame { isolation: isolate; }
+.theater-scene .stage-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: url('/assets/theater-proscenium.svg') center / 100% 100% no-repeat;
+  border-radius: inherit;
+}
+.theater-scene .floating-scene-controls, .theater-scene .marquee-lights { z-index: 2; }
+.theater-scene .stage-topline { position: relative; z-index: 1; padding-inline: clamp(8px, 5vw, 64px); }
+.theater-scene .audience-section {
+  background:
+    radial-gradient(ellipse at 50% 0%, #e6ac6d56, transparent 70%),
+    repeating-linear-gradient(0deg, #241a31 0 2px, #48334e 3px 35px, #5f4057 36px);
+  box-shadow: inset 0 6px 20px #1b122d;
+}
+.theater-scene .seats-grid {
+  position: relative;
+  column-gap: clamp(4px, .75vw, 14px);
+  row-gap: 6px;
+}
+.theater-scene .seat-back {
+  background: radial-gradient(ellipse at 50% 0%, #d4606d90, transparent 75%),
+    linear-gradient(180deg, #922a46, #601e38 60%, #331325);
+  box-shadow: inset 0 3px 5px #ffbda750, inset 0 -4px 6px #2a1020, 0 5px 8px #170e20;
+}
+.theater-scene .seat-back::after {
+  content: '';
+  position: absolute;
+  inset: 4px 9% 3px;
+  border: 1px solid #e8998060;
+  border-bottom-color: #421329;
+  border-radius: inherit;
+}
+.theater-scene .seat-avatar.audience-sprite {
+  filter: drop-shadow(0 -2px 4px #ffc98965) drop-shadow(0 3px 3px #130b23);
+}
+.theater-scene .seat-tile:has(.seat-chat-bubble) { z-index: 1; }
+.theater-scene .seat-tile:has(.animation-heart, .animation-wave, .animation-cheer) .seat-back {
+  border-color: #ffdc9a;
+  box-shadow: inset 0 2px 8px #ffbb8470, 0 0 13px #ffbb7455;
+}
+.theater-scene .seat-chat-bubble {
+  color: #4b253d;
+  background: #fff0da;
+  border-color: #f3bf78;
+}

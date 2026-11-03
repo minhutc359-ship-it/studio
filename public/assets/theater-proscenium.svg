@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 380" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="velvet" x2="1" y2=".75" gradientUnits="objectBoundingBox">
+      <stop stop-color="#340e23"/><stop offset=".46" stop-color="#ae3654"/><stop offset=".72" stop-color="#641931"/><stop offset="1" stop-color="#270e24"/>
+    </linearGradient>
+    <linearGradient id="gold" x2="0" y2="1">
+      <stop stop-color="#fff0b2"/><stop offset=".5" stop-color="#d89445"/><stop offset="1" stop-color="#7c432f"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#ffc879" stop-opacity=".65"/><stop offset="1" stop-color="#ff9c4c" stop-opacity="0"/>
+    </radialGradient>
+    <g id="wing">
+      <path d="M0 0h214C163 41 107 77 62 133c-17 21-24 58-16 81L0 239z" fill="url(#velvet)" stroke="#d07363" stroke-width="2"/>
+      <path d="M177 0C121 52 66 82 46 142M125 0C78 52 42 102 30 154M77 0C43 46 22 109 17 162" fill="none" stroke="#ffd0a8" stroke-opacity=".25" stroke-width="3"/>
+      <path d="M2 159q20 8 45-12" fill="none" stroke="url(#gold)" stroke-width="4"/>
+      <circle cx="46" cy="148" r="4" fill="#ffd27f"/>
+      <path d="M46 151v13l-4 9h8l-4-9" stroke="#ffcd7e" fill="#d79248"/>
+      <path d="M27 209v29" stroke="#c28a53" stroke-width="2"/>
+      <circle cx="27" cy="260" r="46" fill="url(#glow)"/>
+      <path d="M15 241h24l5 9-4 24H14l-4-24z" fill="#503042" stroke="#e6ad66" stroke-width="2"/>
+      <path d="M19 247h16l2 22H17z" fill="#ffe9aa"/>
+      <path d="M27 242v31m-15-22h30" stroke="#a9643f" stroke-width="1.5"/>
+    </g>
+  </defs>
+  <path d="M0 4q400 32 800 0" fill="none" stroke="url(#gold)" stroke-width="3"/>
+  <use href="#wing"/><use href="#wing" transform="translate(800) scale(-1 1)"/>
+</svg>

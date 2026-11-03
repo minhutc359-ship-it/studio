@@ -35,6 +35,9 @@ export function createSeatState(): SeatState {
 }
 
 export function seatReducer(state: SeatState, action: SeatAction): SeatState {
+  const now = 'now' in action ? action.now ?? Date.now() : Date.now()
+  const queue = state.queue.filter((viewer) => now - viewer.requestedAt < 600_000)
+  if (queue.length !== state.queue.length) state = { ...state, queue }
   if (action.type === 'join') {
     const alreadySeated = state.seats.find((seat) => seat.viewer?.id === action.viewer.id)
     if (alreadySeated) {
@@ -65,6 +68,7 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
           : seat),
       }
     }
+    if (state.queue.length >= 100) return state
     return { ...state, queue: [...state.queue, { ...action.viewer, requestedAt: action.now ?? Date.now() }] }
   }
 
@@ -84,11 +88,14 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
   }
 
   if (action.type === 'lock') {
+    const seat = state.seats.find((candidate) => candidate.id === action.seatId)
+    if (!seat || seat.viewer) return state
+    const next = action.locked ? undefined : queue[0]
     return {
-      ...state,
-      seats: state.seats.map((seat) => seat.id === action.seatId && !seat.viewer
-        ? { ...seat, status: action.locked ? 'locked' : 'empty' }
-        : seat),
+      queue: next ? queue.slice(1) : queue,
+      seats: state.seats.map((candidate) => candidate.id !== seat.id ? candidate
+        : next ? { id: seat.id, viewer: next, status: 'occupied', assignedAt: now, lastInteractionAt: now }
+        : { id: seat.id, status: action.locked ? 'locked' : 'empty' }),
     }
   }
 

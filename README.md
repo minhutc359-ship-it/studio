@@ -23,15 +23,24 @@ npm run build
 1. Vào Studio, chọn `Demo · Mock provider`.
 2. Dùng nút thử sự kiện hoặc mở `Xem thử` / `Live canvas`.
 3. Thử `!join`, `!leave`, `!seat N`, quà, lượt thích và disconnect/reconnect từ Mock Event Deck.
-4. Chọn ghế trống để khóa/mở khóa; ghế không bị thu hồi tự động.
+4. Chọn ghế trống để khóa/mở khóa; ghế không bị thu hồi tự động. Hàng chờ tối đa 100 người và hết hạn sau 10 phút.
 5. Dùng tab `Màn chiếu` để chọn placeholder, video trong phiên, URL trực tiếp hoặc composition từ OBS.
+
+## Kết nối phòng thật
+
+- **TikFinity:** mở ứng dụng TikFinity trên máy livestream, kết nối TikTok LIVE, rồi chọn TikFinity Local và bấm **Kết nối**. Studio mặc định mở WebSocket localhost cổng 21213. Nếu dùng bridge riêng, dán link WebSocket thay thế. Địa chỉ ngoài loopback cần dùng `wss://`.
+- **TikTools:** tạo JWT ngắn hạn giới hạn cho kênh theo [tài liệu TikTools](https://tik.tools/docs), nhập tên kênh hoặc link TikTok rồi dán JWT hoặc API key. Bạn cũng có thể dán một link WebSocket đầy đủ trên `wss://api.tik.tools/` có sẵn `uniqueId` và `jwtKey` hoặc `apiKey`. Bấm **Kết nối**. Khi JWT hết hạn, tạo JWT mới và kết nối lại.
+- Giữ Setup và Live canvas trong cùng tab, dùng Window Capture để lấy trạng thái phiên. Mở socket thành công mới xác nhận đường truyền. Hãy thử chat `!join`, quà và lượt thích từ phòng thật trước khi đưa lên sóng.
 
 ## Giới hạn đã biết
 
-- TikFinity và TikTools hiện chỉ có mặt trong phần cấu hình; adapter chưa kết nối thật. Cần xác minh giao thức, payload và môi trường livestream trước khi triển khai.
+- Adapter TikFinity và TikTools cần xác nhận payload và hành vi reconnect trong buổi LIVE thật.
 - Không có backend, đồng bộ cửa sổ, tài khoản hoặc API phát sóng.
 - URL video có thể bị chặn bởi CORS, DRM hoặc chính sách trình duyệt. Chỉ phát nội dung có quyền sử dụng.
 - Settings lưu trong localStorage; preset JSON không chứa token/key. Chat và trạng thái ghế chỉ giữ trong RAM.
 - Art trong bản demo dùng CSS và emoji; không dùng nhân vật/logo thương mại.
 
 Xem đặc tả sản phẩm tại [VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md](./VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md).
+### Tương tác giữa các ghế
+
+Sau khi vào ghế bằng `!join`, khán giả có thể gõ `!react heart 2`, `!react wave 2` hoặc `!react cheer 2` để gửi tim, vẫy chào hoặc cổ vũ người ở ghế 2. Bỏ số ghế để thả biểu cảm cho cả rạp. Trong Mock Event Deck, thêm hai khán giả để thử các nút tương tác.
