@@ -1,11 +1,7 @@
 import { providerUrl } from './domain/providerConfig'
+import { normalizeProviderEvent, resolveProviderViewerId } from './domain/providerEvent'
 import { useStudioStore, type StudioSettings } from './store'
 
-type Payload = Record<string, unknown>
-const object = (value: unknown): Payload =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value as Payload : {}
-const string = (value: unknown) => typeof value === 'string' ? value : ''
-const identifier = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : string(value)
 const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 
 let disconnect: (() => void) | undefined
@@ -31,6 +27,7 @@ export function connectProvider(settings: StudioSettings, input: string) {
   let attempts = 0
   let stopped = false
   const seen = new Set<string>()
+  const viewerAliases = new Map<string, string>()
   const status = (connection: ReturnType<typeof useStudioStore.getState>['connection'], connectionDetail = '') =>
     useStudioStore.setState({ connection, connectionDetail })
 
@@ -61,15 +58,19 @@ export function connectProvider(settings: StudioSettings, input: string) {
     }
     socket.onmessage = ({ data: frame }) => {
       if (stopped || typeof frame !== 'string' || frame.length > 256_000) return
-      let envelope: Payload
-      try { envelope = object(JSON.parse(frame)) } catch { return }
-      const type = string(envelope.event)
-      const data = object(envelope.data)
-      const user = object(data.user)
-      const id = identifier(user.userId ?? user.id ?? data.userId) || string(user.uniqueId ?? data.uniqueId ?? data.user_unique_id)
-      const viewer = { id, name: (string(user.nickname ?? data.nickname) || string(user.uniqueId ?? data.uniqueId) || id).slice(0, 48), avatar: '🎟️' }
-      const store = useStudioStore.getState()
-      const messageId = identifier(data.msgId ?? object(data.common).msgId ?? envelope.msgId)
+      let parsed: unknown
+      try { parsed = JSON.parse(frame) } catch { return }
+      const { type, data, id: providerId, identityKeys, name, comment, messageId } = normalizeProviderEvent(parsed)
+      const currentState = useStudioStore.getState()
+      const seatedIds = new Set([
+        ...currentState.seatState.seats.flatMap((seat) => seat.viewer ? [seat.viewer.id] : []),
+        ...currentState.seatState.queue.map((viewer) => viewer.id),
+      ])
+      const id = resolveProviderViewerId(identityKeys, viewerAliases, seatedIds, providerId)
+      identityKeys.forEach((key) => viewerAliases.set(key, id))
+      const viewer = { id, name: (name || id).slice(0, 48), avatar: '🎟️' }
+      const store = currentState
+      if (id) store.touchViewer(id)
       if (type === 'gift' && (data.giftType === 1 || data.repeatEnd === false || data.repeatEnd === 0) && data.repeatEnd !== true && data.repeatEnd !== 1) return
       const key = messageId && `${type}:${messageId}`
       if (key && seen.has(key)) return
@@ -84,9 +85,10 @@ export function connectProvider(settings: StudioSettings, input: string) {
         const delta = count(data.likeCount)
         if (total !== undefined || delta !== undefined) useStudioStore.setState({ likes: total ?? store.likes + (delta ?? 0) })
       }
-      if (id && type === 'chat' && string(data.comment)) store.addChat(viewer, string(data.comment).slice(0, 500))
+      if (id && type === 'chat' && comment) store.addChat(viewer, comment.slice(0, 500))
       if (id && type === 'member' && store.settings.seatMode !== 'manual-command') store.addChat(viewer, '!join', false)
-      if (id && type === 'gift') store.addGiftEvent(viewer, string(data.giftName ?? object(data.gift).name), count(data.repeatCount))
+      const gift = data.gift && typeof data.gift === 'object' && !Array.isArray(data.gift) ? data.gift as Record<string, unknown> : {}
+      if (id && type === 'gift') store.addGiftEvent(viewer, typeof data.giftName === 'string' ? data.giftName : typeof gift.name === 'string' ? gift.name : '', count(data.repeatCount))
       if (type === 'roomInfo' || type === 'chat' || type === 'gift' || type === 'like' || type === 'member') {
         attempts = 0
         if (store.connectionDetail) status('connected')

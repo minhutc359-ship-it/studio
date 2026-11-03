@@ -29,6 +29,7 @@ export type SeatAction =
   | { type: 'lock'; seatId: number; locked: boolean }
   | { type: 'touch'; viewerId: string; now?: number }
   | { type: 'mark-inactive'; before: number }
+  | { type: 'reclaim-inactive'; before: number; now?: number }
 
 export function createSeatState(): SeatState {
   return { seats: Array.from({ length: 12 }, (_, index) => ({ id: index + 1, status: 'empty' })), queue: [] }
@@ -129,6 +130,21 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
         ? { ...seat, status: 'occupied', lastInteractionAt: action.now ?? Date.now() }
         : seat),
     }
+  }
+
+  if (action.type === 'reclaim-inactive') {
+    let remainingQueue = queue
+    let reclaimed = false
+    const seats = state.seats.map((seat) => {
+      if (!seat.viewer || (seat.lastInteractionAt ?? 0) >= action.before) return seat
+      reclaimed = true
+      const nextViewer = remainingQueue[0]
+      if (nextViewer) remainingQueue = remainingQueue.slice(1)
+      return nextViewer
+        ? { id: seat.id, status: 'occupied' as const, viewer: nextViewer, assignedAt: now, lastInteractionAt: now }
+        : { id: seat.id, status: 'empty' as const }
+    })
+    return reclaimed ? { seats, queue: remainingQueue } : state
   }
 
   return {

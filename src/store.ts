@@ -3,13 +3,14 @@ import { parseCommand, type Reaction } from './domain/events'
 import { createSeatState, seatReducer, type SeatState, type Viewer } from './domain/seatManager'
 
 export type ProviderId = 'mock' | 'tikfinity' | 'tiktools'
-export type ScreenMode = 'placeholder' | 'local-video' | 'direct-url' | 'external'
+export type ScreenMode = 'placeholder' | 'local-video' | 'direct-url' | 'screen-share' | 'external'
 
 export interface StudioSettings {
   provider: ProviderId
   username: string
   screenMode: ScreenMode
   screenUrl: string
+  screenSize: number
   showChat: boolean
   seatMode: 'hybrid' | 'manual-command' | 'auto-on-join'
   reducedMotion: boolean
@@ -21,6 +22,7 @@ const defaultSettings: StudioSettings = {
   username: '',
   screenMode: 'placeholder',
   screenUrl: '',
+  screenSize: 100,
   showChat: true,
   seatMode: 'hybrid',
   reducedMotion: false,
@@ -89,6 +91,8 @@ interface StudioState {
   runMockEvent: () => void
   sendMockGift: () => void
   addGiftEvent: (viewer: Viewer, giftName: string, count?: number) => void
+  touchViewer: (viewerId: string) => void
+  reclaimInactiveViewers: (before: number) => void
   addMockLikes: () => void
   setViewerCount: (count: number) => void
   toggleQuietMode: () => void
@@ -137,6 +141,22 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     set({ settings })
   },
   setConnection: (connection) => set({ connection }),
+  touchViewer: (viewerId) => set((state) => ({
+    seatState: seatReducer(state.seatState, { type: 'touch', viewerId }),
+  })),
+  reclaimInactiveViewers: (before) => {
+    const current = get()
+    const staleSeats = current.seatState.seats.filter((seat) => seat.viewer && (seat.lastInteractionAt ?? 0) < before)
+    if (!staleSeats.length) return
+    const staleViewerIds = new Set(staleSeats.map((seat) => seat.viewer!.id))
+    const staleSeatIds = new Set(staleSeats.map((seat) => seat.id))
+    set((state) => ({
+      seatState: seatReducer(state.seatState, { type: 'reclaim-inactive', before }),
+      seatBubbles: Object.fromEntries(Object.entries(state.seatBubbles).filter(([viewerId]) => !staleViewerIds.has(viewerId))),
+      seatAnimations: Object.fromEntries(Object.entries(state.seatAnimations).filter(([viewerId]) => !staleViewerIds.has(viewerId))),
+      reactionCooldowns: Object.fromEntries(Object.entries(state.reactionCooldowns).filter(([seatId]) => !staleSeatIds.has(Number(seatId)))),
+    }))
+  },
   addChat: (viewer, text, respond = true) => {
     const state = get()
     const command = parseCommand(text)
@@ -167,6 +187,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
             : assigned ? `đang ở ghế ${assigned.id}` : before === seatState ? 'không thể chọn ghế này' : 'đã vào hàng chờ'
       kind = 'system'
     } else if (command?.kind === 'react') {
+      seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
       const source = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
       const target = seatState.seats.find((seat) => seat.id === command.seatId)
       if (!source) response = command.seatId
@@ -182,7 +203,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       }
       kind = 'reaction'
     } else if (command?.kind === 'help') {
-      response = 'Lệnh: !join · !leave · !seat 1–12 · !react heart/cheer/wave [ghế]'
+      seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
+      response = 'Lệnh: join · leave · seat 1–12 · react heart/cheer/wave [ghế]'
       kind = 'system'
     } else {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
@@ -196,7 +218,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const currentSeatId = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.id
     const newlySeated = previousSeatId === undefined && currentSeatId !== undefined
     const movedSeat = previousSeatId !== undefined && currentSeatId !== previousSeatId
-    const seatActionBubble = (newlySeated || movedSeat) && command?.kind === 'seat'
+    const seatEntryBubble = (newlySeated || movedSeat) && (command?.kind === 'join' || command?.kind === 'seat')
     const animationKind: SeatAnimation | undefined = newlySeated || movedSeat ? 'enter' : seated ? 'talk' : undefined
     const animationId = `${viewer.id}-${Date.now()}-${Math.random()}`
     const isMockLeave = command?.kind === 'leave' && state.mockAudienceIds.includes(viewer.id)
@@ -204,7 +226,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       seatState,
       chat: nextChat.slice(-24),
       ...(isMockLeave ? { mockAudienceIds: state.mockAudienceIds.filter((viewerId) => viewerId !== viewer.id), viewerCount: Math.max(0, state.viewerCount - 1) } : {}),
-      ...(seated || seatActionBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatActionBubble ? response : text)?.slice(0, 64) ?? '' } } } : {}),
+      ...(seated || seatEntryBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatEntryBubble ? response : text)?.slice(0, 64) ?? '' } } } : {}),
       ...(animationKind ? { seatAnimations: { ...state.seatAnimations, [viewer.id]: { id: animationId, kind: animationKind } } } : {}),
     })
     if (command?.kind === 'react' && reactionSource !== undefined) {
@@ -215,23 +237,25 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         seatBubbles: {
           ...current.seatBubbles,
           ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, {
-            id: animationId,
+            id: `${animationId}:bubble:${seat.viewer!.id}`,
             text: seat.id === source ? `${reactionIcons[reaction]} ${command.seatId ? `→ Ghế ${command.seatId}` : ''}` : `${reactionIcons[reaction]} Từ ghế ${source}`,
           }])),
         },
         seatAnimations: {
           ...current.seatAnimations,
-          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, { id: animationId, kind: reaction }])),
+          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, { id: `${animationId}:animation:${seat.viewer!.id}`, kind: reaction }])),
         },
       }))
       for (const seat of reactionSeats) {
         const id = seat.viewer!.id
-        window.setTimeout(() => get().clearSeatBubble(id, animationId), 3600)
-        window.setTimeout(() => get().clearSeatAnimation(id, animationId), 1600)
+        const seatBubbleId = `${animationId}:bubble:${id}`
+        const seatAnimationId = `${animationId}:animation:${id}`
+        window.setTimeout(() => get().clearSeatBubble(id, seatBubbleId), 3600)
+        window.setTimeout(() => get().clearSeatAnimation(id, seatAnimationId), 2000)
       }
     }
-    if (seated || seatActionBubble) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
-    if (animationKind) window.setTimeout(() => get().clearSeatAnimation(viewer.id, animationId), animationKind === 'enter' ? 1400 : 1100)
+    if (seated || seatEntryBubble) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
+    if (animationKind) window.setTimeout(() => get().clearSeatAnimation(viewer.id, animationId), animationKind === 'talk' ? 1500 : 1400)
   },
   clearSeatBubble: (viewerId, bubbleId) => set((state) => {
     if (state.seatBubbles[viewerId]?.id !== bubbleId) return state
@@ -294,6 +318,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const giftAnimationId = `${viewer.id}-${Date.now()}-${Math.random()}`
     const seatedIds = get().seatState.seats.flatMap((seat) => seat.viewer ? [seat.viewer.id] : [])
     const animationTargets = seatedIds.includes(viewer.id) ? [viewer.id] : seatedIds
+    const targetAnimationIds = new Map(animationTargets.map((viewerId) => [viewerId, `${giftAnimationId}:${viewerId}`]))
     const receivedAt = Date.now()
     set((state) => {
       const observed = state.observedGifts.find((gift) => gift.name === normalizedName)
@@ -301,18 +326,19 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         ? state.observedGifts.map((gift) => gift.name === normalizedName ? { ...gift, count: gift.count + settledCount, lastReceivedAt: receivedAt } : gift)
         : [...state.observedGifts, { name: normalizedName, count: settledCount, lastReceivedAt: receivedAt }]
       return {
+        seatState: seatReducer(state.seatState, { type: 'touch', viewerId: viewer.id }),
         gifts: state.gifts + 1,
         chat: [...state.chat, giftEntry].slice(-24),
         highlightedGiftId: giftEntry.id,
         observedGifts: observedGifts.sort((left, right) => right.lastReceivedAt - left.lastReceivedAt).slice(0, 8),
         seatAnimations: {
           ...state.seatAnimations,
-          ...Object.fromEntries(animationTargets.map((viewerId) => [viewerId, { id: giftAnimationId, kind: viewerId === viewer.id ? 'gift' : 'cheer' }])),
+          ...Object.fromEntries(animationTargets.map((viewerId) => [viewerId, { id: targetAnimationIds.get(viewerId)!, kind: viewerId === viewer.id ? 'gift' : 'cheer' }]))
         },
       }
     })
     window.setTimeout(() => get().clearGiftHighlight(giftEntry.id), 2600)
-    animationTargets.forEach((viewerId) => window.setTimeout(() => get().clearSeatAnimation(viewerId, giftAnimationId), 1400))
+    animationTargets.forEach((viewerId) => window.setTimeout(() => get().clearSeatAnimation(viewerId, targetAnimationIds.get(viewerId)!), 1400))
   },
   addMockLikes: () => set((state) => ({ likes: state.likes + 100, chat: [...state.chat, entry({ id: 'crowd', name: 'Khán giả', avatar: '💖' }, '+100 lượt thích', 'reaction')].slice(-24) })),
   setViewerCount: (count) => set({ viewerCount: Math.max(0, count) }),

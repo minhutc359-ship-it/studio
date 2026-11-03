@@ -4,12 +4,65 @@ import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, AudioLines, Bell, Check, ChevronDown, CircleHelp,
   Clapperboard, Film, Gift, Heart, Link2, LockKeyhole, MessageCircle, MonitorPlay, Moon,
   Maximize2, Minimize2, MoreHorizontal, Play, Plus, Radio, Settings2, ShieldCheck,
+  SkipBack, SkipForward,
   Sparkles, Users, Volume2, VolumeX, WandSparkles, X,
 } from 'lucide-react'
 import { useStudioStore, type ChatEntry, type ProviderId, type ScreenMode, type StudioSettings } from './store'
 import { seatReducer, type Seat } from './domain/seatManager'
 import { connectProvider, stopProvider } from './liveProvider'
 import { TIKFINITY_DEFAULT } from './domain/providerConfig'
+import { youtubeEmbedUrl } from './domain/youtube'
+import { parseMediaPlaylist } from './domain/mediaPlaylist'
+
+interface YouTubeIframePlayer {
+  destroy: () => void
+}
+
+interface YouTubeIframeApi {
+  PlayerState: { ENDED: number }
+  Player: new (element: HTMLElement, options: {
+    videoId: string
+    playerVars: Record<string, string | number>
+    events: {
+      onStateChange: (event: { data: number }) => void
+      onError: () => void
+    }
+  }) => YouTubeIframePlayer
+}
+
+declare global {
+  interface Window {
+    YT?: YouTubeIframeApi
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+let youtubeApiPromise: Promise<YouTubeIframeApi> | undefined
+
+function loadYouTubeIframeApi() {
+  if (window.YT?.Player) return Promise.resolve(window.YT)
+  if (!youtubeApiPromise) {
+    youtubeApiPromise = new Promise((resolve, reject) => {
+      const previousReady = window.onYouTubeIframeAPIReady
+      window.onYouTubeIframeAPIReady = () => {
+        previousReady?.()
+        if (window.YT) resolve(window.YT)
+        else reject(new Error('YouTube player API did not initialize.'))
+      }
+      let script = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]')
+      if (!script) {
+        script = document.createElement('script')
+        script.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(script)
+      }
+      script.onerror = () => {
+        youtubeApiPromise = undefined
+        reject(new Error('YouTube player API failed to load.'))
+      }
+    })
+  }
+  return youtubeApiPromise
+}
 
 const connectionLabels = {
   waiting: 'Chờ kết nối', connecting: 'Đang mở kết nối', connected: 'Đã kết nối',
@@ -32,9 +85,9 @@ function AppShell() {
     useStudioStore.setState({ connection: 'waiting', connectionDetail: '' })
   }, [settings.provider, settings.username, resetSession])
   useEffect(() => {
-    const timer = window.setInterval(() => useStudioStore.setState((state) => ({
-      seatState: seatReducer(state.seatState, { type: 'mark-inactive', before: Date.now() - 300_000 }),
-    })), 15_000)
+    const timer = window.setInterval(() => {
+      useStudioStore.getState().reclaimInactiveViewers(Date.now() - 60_000)
+    }, 60_000)
     return () => window.clearInterval(timer)
   }, [])
   const isLive = location.pathname === '/live'
@@ -71,7 +124,7 @@ function AppShell() {
 function SetupPage() {
   const { settings, updateSettings, connection, setConnection, addMockViewer, sendMockGift, addMockLikes } = useStudioStore()
   const connectionDetail = useStudioStore((state) => state.connectionDetail)
-  const [providerInput, setProviderInput] = useState('')
+  const [providerInput, setProviderInput] = useState(() => settings.provider === 'tikfinity' ? TIKFINITY_DEFAULT : '')
   const [section, setSection] = useState('Kết nối')
   const [saved, setSaved] = useState(false)
   const [importMessage, setImportMessage] = useState('')
@@ -100,16 +153,17 @@ function SetupPage() {
       if (file.size > 1_000_000) throw new Error('Tệp vượt giới hạn 1 MB.')
       const parsed = JSON.parse(await file.text()) as { schemaVersion?: number; settings?: Partial<StudioSettings> }
       if (parsed.schemaVersion !== 1 || !parsed.settings || typeof parsed.settings !== 'object') throw new Error('Preset không đúng phiên bản.')
-      const { provider, username, screenMode, screenUrl, showChat, seatMode, reducedMotion, showNicknames } = parsed.settings
+      const { provider, username, screenMode, screenUrl, screenSize, showChat, seatMode, reducedMotion, showNicknames } = parsed.settings
       if (provider !== undefined && !['mock', 'tikfinity', 'tiktools'].includes(provider)) throw new Error('Provider không hợp lệ.')
       if ((username !== undefined && typeof username !== 'string')
         || (screenUrl !== undefined && typeof screenUrl !== 'string')
-        || (screenMode !== undefined && !['placeholder', 'local-video', 'direct-url', 'external'].includes(screenMode))
+        || (screenMode !== undefined && !['placeholder', 'local-video', 'direct-url', 'screen-share', 'external'].includes(screenMode))
+        || (screenSize !== undefined && (typeof screenSize !== 'number' || !Number.isFinite(screenSize) || screenSize < 50 || screenSize > 100))
         || (seatMode !== undefined && !['hybrid', 'manual-command', 'auto-on-join'].includes(seatMode))
         || [showChat, reducedMotion, showNicknames].some((value) => value !== undefined && typeof value !== 'boolean')) {
         throw new Error('Preset chứa giá trị không hợp lệ.')
       }
-      const patch = { provider, username, screenMode, screenUrl, showChat, seatMode, reducedMotion, showNicknames }
+      const patch = { provider, username, screenMode, screenUrl, screenSize, showChat, seatMode, reducedMotion, showNicknames }
       updateSettings(Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)))
       setImportMessage('Preset đã nhập thành công.')
     } catch (error) {
@@ -140,7 +194,7 @@ function SetupPage() {
             <section className="settings-panel">
               <div className="panel-title"><span className="step-number">01</span><div><h3>Nguồn sự kiện</h3><p>Chọn nơi gửi chat, quà và lượt thích.</p></div></div>
               <div className="provider-options">
-                {(['mock', 'tikfinity', 'tiktools'] as ProviderId[]).map((provider) => <button key={provider} onClick={() => { if (provider !== settings.provider) { setProviderInput(''); updateSettings({ provider }) } }} className={`provider-option ${settings.provider === provider ? 'chosen' : ''}`}><span className="provider-icon">{provider === 'mock' ? <WandSparkles size={18} /> : provider === 'tikfinity' ? <AudioLines size={18} /> : <Link2 size={18} />}</span><span className="provider-text"><b>{providerLabels[provider]}</b><small>{provider === 'mock' ? 'Không cần tài khoản · sẵn sàng' : provider === 'tikfinity' ? 'WebSocket local · cần kiểm chứng' : 'WebSocket cloud · cần token phiên'}</small></span><i className="radio-dot" /></button>)}
+                {(['mock', 'tikfinity', 'tiktools'] as ProviderId[]).map((provider) => <button key={provider} onClick={() => { if (provider !== settings.provider) { setProviderInput(provider === 'tikfinity' ? TIKFINITY_DEFAULT : ''); updateSettings({ provider }) } }} className={`provider-option ${settings.provider === provider ? 'chosen' : ''}`}><span className="provider-icon">{provider === 'mock' ? <WandSparkles size={18} /> : provider === 'tikfinity' ? <AudioLines size={18} /> : <Link2 size={18} />}</span><span className="provider-text"><b>{providerLabels[provider]}</b><small>{provider === 'mock' ? 'Không cần tài khoản · sẵn sàng' : provider === 'tikfinity' ? 'WebSocket local · cần kiểm chứng' : 'WebSocket cloud · cần token phiên'}</small></span><i className="radio-dot" /></button>)}
               </div>
               {settings.provider === 'tiktools' && <>
                 <label className="field-label" htmlFor="username">Kênh TikTok <span>bỏ trống nếu link WebSocket đã có kênh</span></label>
@@ -148,15 +202,15 @@ function SetupPage() {
               </>}
               {settings.provider !== 'mock' && <>
                 <label className="field-label" htmlFor="provider-input">{settings.provider === 'tikfinity' ? 'Link WebSocket TikFinity' : 'JWT, API key hoặc link WebSocket TikTools'}</label>
-                <input id="provider-input" type="password" autoComplete="off" spellCheck={false} value={providerInput} onChange={(event) => setProviderInput(event.target.value)} placeholder={settings.provider === 'tikfinity' ? TIKFINITY_DEFAULT : 'Dán token hoặc wss://api.tik.tools/…'} />
+                <input id="provider-input" type={settings.provider === 'tikfinity' ? 'text' : 'password'} autoComplete="off" spellCheck={false} value={providerInput} onChange={(event) => setProviderInput(event.target.value)} placeholder={settings.provider === 'tikfinity' ? TIKFINITY_DEFAULT : 'Dán token hoặc wss://api.tik.tools/…'} />
                 <p className="provider-warning">{settings.provider === 'tikfinity'
-                  ? `Mở TikFinity và kết nối phòng LIVE trước. Để trống để dùng ${TIKFINITY_DEFAULT}`
+                  ? `Mở TikFinity và kết nối phòng LIVE trước. Để trống để dùng ${TIKFINITY_DEFAULT}. TikFinity không gửi event riêng cho từng người vào phòng; viewer cần comment join để được xếp ghế.`
                   : 'Dán link WebSocket đầy đủ hoặc nhập kênh và token. Ưu tiên JWT ngắn hạn. Token và link chỉ giữ trong bộ nhớ phiên.'}</p>
               </>}
               <div className="button-row">
                 <button className="button button-primary" onClick={() => {
                   if (settings.provider === 'mock') setConnection('connected')
-                  else if (connectProvider(settings, providerInput)) setProviderInput('')
+                  else if (connectProvider(settings, providerInput)) setProviderInput(settings.provider === 'tikfinity' ? providerInput || TIKFINITY_DEFAULT : '')
                 }}><Radio size={15} />{settings.provider === 'mock' ? 'Bật Mock provider' : 'Kết nối'}</button>
                 {settings.provider !== 'mock' && <button className="button button-quiet" onClick={stopProvider}>Ngắt kết nối</button>}
                 <span role="status" className="connection-detail">{connectionLabels[connection]}{connectionDetail && ` · ${connectionDetail}`}</span>
@@ -165,15 +219,15 @@ function SetupPage() {
             <section className="settings-panel settings-panel-compact">
               <div className="panel-title"><span className="step-number">02</span><div><h3>Chính sách ghế</h3><p>Không tự giải phóng ghế khi chỉ mất tương tác.</p></div></div>
               <label className="field-label" htmlFor="seatMode">Cách vào ghế</label>
-              <select id="seatMode" value={settings.seatMode} onChange={(event) => updateSettings({ seatMode: event.target.value as StudioSettings['seatMode'] })}><option value="hybrid">Lệnh !join + sự kiện join nếu có</option><option value="manual-command">Chỉ qua lệnh chat</option><option value="auto-on-join">Tự vào khi provider gửi member</option></select>
-              <div className="policy-caption"><LockKeyhole size={14} /> Thu hồi ghế: thủ công · Hàng chờ: bật · Tối đa 12 ghế</div>
+              <select id="seatMode" value={settings.seatMode} onChange={(event) => updateSettings({ seatMode: event.target.value as StudioSettings['seatMode'] })}><option value="hybrid">Lệnh join + sự kiện join nếu có</option><option value="manual-command">Chỉ qua lệnh chat</option><option value="auto-on-join">Tự vào khi provider gửi member</option></select>
+              <div className="policy-caption"><LockKeyhole size={14} /> Ghế tự nhả sau 60 giây không có event; viewer xem im lặng cũng có thể bị nhả. Hàng chờ: bật · Tối đa 12 ghế</div>
             </section>
           </div>
           <aside className="preview-column">
             <div className="preview-heading"><div><span className="eyebrow">LIVE PREVIEW</span><h3>Khung rạp</h3></div><Link to="/preview" className="text-action">Mở preview <ArrowUpRight size={14} /></Link></div>
             <MiniTheater />
             <div className="preview-stats"><span><i className="tiny-light" /> 12 ghế sẵn sàng</span><span><Users size={14} /> {useStudioStore.getState().seatState.queue.length} chờ</span></div>
-            {settings.provider === 'mock' && <div className="mock-box"><div className="mock-box-title"><span><Sparkles size={16} /> Thử sự kiện</span><span className="mock-tag">MOCK</span></div><div className="mock-actions"><button onClick={() => addMockViewer()}><Plus size={15} /> !join</button><button onClick={sendMockGift}><Gift size={15} /> Quà</button><button onClick={addMockLikes}><Heart size={15} /> +100</button></div><small>Sự kiện demo chỉ tác động lên phiên đang mở.</small></div>}
+            {settings.provider === 'mock' && <div className="mock-box"><div className="mock-box-title"><span><Sparkles size={16} /> Thử sự kiện</span><span className="mock-tag">MOCK</span></div><div className="mock-actions"><button onClick={() => addMockViewer()}><Plus size={15} /> join</button><button onClick={sendMockGift}><Gift size={15} /> Quà</button><button onClick={addMockLikes}><Heart size={15} /> +100</button></div><small>Sự kiện demo chỉ tác động lên phiên đang mở.</small></div>}
           </aside>
         </div>}
 
@@ -197,7 +251,25 @@ function MediaSettings({ settings, updateSettings }: { settings: StudioSettings;
     setError('')
     updateSettings({ screenMode: 'local-video' })
   }
-  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">01</span><div><h3>Nguồn màn chiếu</h3><p>Chỉ phát nội dung bạn có quyền stream.</p></div></div><div className="source-tiles">{([['placeholder', 'Chờ mở màn', 'Nền rạp và tiêu đề'], ['local-video', 'Video trên máy', 'Chọn file phiên này'], ['direct-url', 'Video URL', 'Nguồn trực tiếp / HLS'], ['external', 'OBS composition', 'Ghép layer trong OBS']] as [ScreenMode, string, string][]).map(([mode, label, detail]) => <button key={mode} className={`source-tile ${settings.screenMode === mode ? 'chosen' : ''}`} onClick={() => updateSettings({ screenMode: mode })}><Film size={18} /><b>{label}</b><small>{detail}</small></button>)}</div>{settings.screenMode === 'local-video' && <label className="upload-zone"><ArrowDownToLine size={20} /><b>{videoFile?.name || 'Chọn video từ thiết bị'}</b><small>Tệp chỉ dùng trong phiên hiện tại, không tải lên.</small><input type="file" accept="video/*" onChange={(event) => pickVideo(event.target.files?.[0])} /></label>}{settings.screenMode === 'direct-url' && <><label className="field-label" htmlFor="screenUrl">URL video</label><input id="screenUrl" value={settings.screenUrl} onChange={(event) => updateSettings({ screenUrl: event.target.value })} placeholder="https://..." /></>}{error && <p className="form-error">{error}</p>}<label className="field-label" htmlFor="screenTitle">Tiêu đề màn chiếu</label><input id="screenTitle" placeholder="Đêm xem phim cùng nhau" /></section></div>
+  return (
+    <div className="single-settings">
+      <section className="settings-panel">
+        <div className="panel-title"><span className="step-number">01</span><div><h3>Nguồn màn chiếu</h3><p>Chỉ phát nội dung bạn có quyền stream.</p></div></div>
+        <div className="source-tiles">
+          {([['placeholder', 'Chờ mở màn', 'Nền rạp và tiêu đề'], ['local-video', 'Video trên máy', 'Chọn file phiên này'], ['direct-url', 'Video URL', 'Nguồn trực tiếp / HLS'], ['screen-share', 'Chia sẻ màn hình', 'Màn hình hoặc cửa sổ'], ['external', 'OBS composition', 'Ghép layer trong OBS']] as [ScreenMode, string, string][]).map(([mode, label, detail]) => (
+            <button key={mode} className={`source-tile ${settings.screenMode === mode ? 'chosen' : ''}`} onClick={() => updateSettings({ screenMode: mode })}><Film size={18} /><b>{label}</b><small>{detail}</small></button>
+          ))}
+        </div>
+        <label className="field-label screen-size-label" htmlFor="screenSize">Kích thước màn chiếu <output>{settings.screenSize}%</output></label>
+        <input className="screen-size-slider" id="screenSize" type="range" min="50" max="100" step="5" value={settings.screenSize} onChange={(event) => updateSettings({ screenSize: Number(event.target.value) })} />
+        {settings.screenMode === 'local-video' && <label className="upload-zone"><ArrowDownToLine size={20} /><b>{videoFile?.name || 'Chọn video từ thiết bị'}</b><small>Tệp chỉ dùng trong phiên hiện tại, không tải lên.</small><input type="file" accept="video/*" onChange={(event) => pickVideo(event.target.files?.[0])} /></label>}
+        {settings.screenMode === 'direct-url' && <><label className="field-label" htmlFor="screenUrl">Danh sách URL video / YouTube <span>mỗi link một dòng, phát lần lượt</span></label><textarea id="screenUrl" rows={5} value={settings.screenUrl} onChange={(event) => updateSettings({ screenUrl: event.target.value })} placeholder={'https://youtu.be/...\nhttps://example.com/video.mp4'} /></>}
+        {settings.screenMode === 'screen-share' && <p className="provider-warning">Bắt đầu chia sẻ trên Live canvas. Trình duyệt sẽ hỏi bạn muốn chia sẻ màn hình hoặc cửa sổ nào.</p>}
+        {error && <p className="form-error">{error}</p>}
+        <label className="field-label" htmlFor="screenTitle">Tiêu đề màn chiếu</label><input id="screenTitle" placeholder="Đêm xem phim cùng nhau" />
+      </section>
+    </div>
+  )
 }
 
 function SeatSettings() {
@@ -206,7 +278,7 @@ function SeatSettings() {
 }
 
 function ChatSettings({ settings, updateSettings }: { settings: StudioSettings; updateSettings: (patch: Partial<StudioSettings>) => void }) {
-  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>!join</code><code>!leave</code><code>!seat 1–12</code><code>!react heart 2</code><code>!react wave 2</code><code>!react cheer 2</code><code>!help</code></div></section></div>
+  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>join</code><code>leave</code><code>seat 1–12</code><code>react heart 2</code><code>react wave 2</code><code>react cheer 2</code><code>help</code></div></section></div>
 }
 
 function BroadcastSettings() {
@@ -233,10 +305,22 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
   const [mockPosition, setMockPosition] = useState({ x: 24, y: 92 })
   const [showControls, setShowControls] = useState(true)
   const [fileMessage, setFileMessage] = useState('')
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null)
+  const [screenShareError, setScreenShareError] = useState('')
+  const [playlistIndex, setPlaylistIndex] = useState(0)
   const cinemaRef = useRef<HTMLElement>(null)
+  const screenVideoRef = useRef<HTMLVideoElement>(null)
+  const youtubeContainerRef = useRef<HTMLDivElement>(null)
+  const advancePlaylistRef = useRef<() => void>(() => {})
   const dragOrigin = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null)
+  const playlist = settings.screenMode === 'direct-url' ? parseMediaPlaylist(settings.screenUrl) : []
+  const activeUrl = playlist[playlistIndex] ?? ''
+  const youtubeSrc = settings.screenMode === 'direct-url' ? youtubeEmbedUrl(activeUrl) : null
   const mediaSrc = settings.screenMode === 'local-video' ? videoUrl
-    : settings.screenMode === 'direct-url' && /^https?:\/\//i.test(settings.screenUrl.trim()) ? settings.screenUrl.trim() : ''
+    : settings.screenMode === 'direct-url' && /^https?:\/\//i.test(activeUrl) && !youtubeSrc ? activeUrl : ''
+  const advancePlaylist = () => setPlaylistIndex((index) => Math.min(index + 1, Math.max(playlist.length - 1, 0)))
+  const rewindPlaylist = () => setPlaylistIndex((index) => Math.max(index - 1, 0))
+  advancePlaylistRef.current = advancePlaylist
   const occupied = seatState.seats.filter((seat) => seat.viewer).length
   const onVideoFile = (file?: File) => {
     if (!file) return
@@ -253,7 +337,38 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
     setVideoUrl(url)
     return () => { if (url) URL.revokeObjectURL(url) }
   }, [videoFile])
-  useEffect(() => setMediaError(false), [videoUrl, settings.screenUrl, settings.screenMode])
+  useEffect(() => {
+    const video = screenVideoRef.current
+    if (video) video.srcObject = screenStream
+    return () => {
+      if (video) video.srcObject = null
+      screenStream?.getTracks().forEach((track) => track.stop())
+    }
+  }, [screenStream])
+  useEffect(() => setPlaylistIndex(0), [settings.screenUrl])
+  useEffect(() => setMediaError(false), [videoUrl, activeUrl, settings.screenMode])
+  useEffect(() => {
+    if (!youtubeSrc || !youtubeContainerRef.current) return
+    let cancelled = false
+    let player: YouTubeIframePlayer | undefined
+    const pathSegments = new URL(youtubeSrc).pathname.split('/').filter(Boolean)
+    const videoId = pathSegments[pathSegments.length - 1] ?? ''
+    void loadYouTubeIframeApi().then((api) => {
+      if (cancelled || !youtubeContainerRef.current) return
+      player = new api.Player(youtubeContainerRef.current, {
+        videoId,
+        playerVars: { autoplay: 1, playsinline: 1, rel: 0, enablejsapi: 1, origin: window.location.origin },
+        events: {
+          onStateChange: (event) => { if (event.data === api.PlayerState.ENDED) advancePlaylistRef.current() },
+          onError: () => setMediaError(true),
+        },
+      })
+    }).catch(() => setMediaError(true))
+    return () => {
+      cancelled = true
+      player?.destroy()
+    }
+  }, [youtubeSrc, playlistIndex])
   useEffect(() => {
     if (settings.provider !== 'mock') return
     let timerId: number
@@ -283,6 +398,25 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
   const goFullscreen = async () => {
     if (document.fullscreenElement === cinemaRef.current) await document.exitFullscreen()
     else await cinemaRef.current?.requestFullscreen?.()
+  }
+  const startScreenShare = async () => {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setScreenShareError('Trình duyệt này không hỗ trợ chia sẻ màn hình. Hãy dùng phiên bản mới của Chrome hoặc Edge.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => setScreenStream((current) => current === stream ? null : current), { once: true })
+      setScreenShareError('')
+      setScreenStream(stream)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') return
+      setScreenShareError('Không thể bắt đầu chia sẻ màn hình. Kiểm tra quyền của trình duyệt rồi thử lại.')
+    }
+  }
+  const stopScreenShare = () => {
+    screenStream?.getTracks().forEach((track) => track.stop())
+    setScreenStream(null)
   }
   const startMockDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button')) return
@@ -327,18 +461,18 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
         <div className="rail-title"><Sparkles size={15} /><span>HƯỚNG DẪN</span></div>
         <div className="action-item"><span className="action-emoji">🍿</span><span><b>Cùng xem LIVE</b><small>Thưởng thức nội dung chung</small></span></div>
         <div className="action-item"><span className="action-emoji">💬</span><span><b>Trò chuyện</b><small>Bình luận, chia sẻ cảm xúc</small></span></div>
-        <div className="action-item"><span className="action-emoji">💗</span><span><b>Thả reaction</b><small>Gõ !react heart 2 để gửi tim đến ghế 2</small></span></div>
-        <div className="action-item"><span className="action-emoji">🎁</span><span><b>Chọn ghế</b><small>Gõ !join để tham gia</small></span></div>
+        <div className="action-item"><span className="action-emoji">💗</span><span><b>Thả reaction</b><small>Gõ react heart 2 để gửi tim đến ghế 2</small></span></div>
+        <div className="action-item"><span className="action-emoji">🎁</span><span><b>Chọn ghế</b><small>Gõ join để tham gia</small></span></div>
         <div className="viewer-command-guide">
           <div className="rail-title"><MessageCircle size={13} /><span>LỆNH KHÁN GIẢ</span></div>
-          <div><code>!join</code><span>Vào ghế trống hoặc hàng chờ</span></div>
-          <div><code>!seat 1–12</code><span>Chọn / đổi sang ghế trống</span></div>
-          <div><code>!leave</code><span>Rời ghế hoặc hàng chờ</span></div>
-          <div><code>!react heart 2</code><span>Gửi reaction đến ghế 2</span></div>
-          <div><code>!react heart</code><span>Thả tim cho cả rạp</span></div>
-          <div><code>!react wave</code><span>Chào cả rạp</span></div>
-          <div><code>!react cheer 2</code><span>Cổ vũ người ở ghế 2</span></div>
-          <div><code>!help</code><span>Xem hướng dẫn lệnh</span></div>
+          <div><code>join</code><span>Vào ghế trống hoặc hàng chờ</span></div>
+          <div><code>seat 1–12</code><span>Chọn / đổi sang ghế trống</span></div>
+          <div><code>leave</code><span>Rời ghế hoặc hàng chờ</span></div>
+          <div><code>react heart 2</code><span>Gửi reaction đến ghế 2</span></div>
+          <div><code>react heart</code><span>Thả tim cho cả rạp</span></div>
+          <div><code>react wave</code><span>Chào cả rạp</span></div>
+          <div><code>react cheer 2</code><span>Cổ vũ người ở ghế 2</span></div>
+          <div><code>help</code><span>Xem hướng dẫn lệnh</span></div>
         </div>
         <div className="rail-divider" />
         <div className="rail-title rail-title-small">{observedGifts.length ? 'QUÀ ĐÃ NHẬN' : 'ĐANG CHỜ QUÀ'}</div>
@@ -349,12 +483,12 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
       <div className="stage-column">
         <div className="stage-frame"><div className="marquee-lights" aria-hidden="true" />
           <div className="stage-topline"><span><i /> ĐANG PHÁT</span><span>{/^[\w.]+$/.test(settings.username) ? `@${settings.username}` : 'VIEWING PARTY'}</span></div>
-          <div className={`screen-content mode-${settings.screenMode}`}>
-            {mediaSrc ? <video key={mediaSrc} src={mediaSrc} controls playsInline muted={quietMode} onError={() => setMediaError(true)} /> : settings.screenMode === 'local-video' ? <label className="screen-upload"><Film size={30} /><b>{fileMessage || 'Chọn video trong phiên này'}</b><small>Video chỉ phát trong trình duyệt hiện tại</small><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label> : settings.screenMode === 'external' ? <div className="external-screen"><MonitorPlay size={32} /><b>Vùng ghép nội dung OBS</b><small>Đặt nguồn game/video bên dưới canvas trong phần mềm phát sóng.</small></div> : <div className="screen-art"><div className="screen-art-stars">✦　·　✧　·　✦</div><span className="screen-kicker">THEATER No. 01</span><div className="screen-title">Đêm xem<br /><em>chung</em></div><div className="screen-filmstrip"><span>◈</span><i /><span>◈</span><i /><span>◈</span></div><div className="screen-caption">MỘT CHIẾC RẠP · RẤT NHIỀU CẢM XÚC</div><div className="screen-orbit orbit-a" /><div className="screen-orbit orbit-b" /></div>}
-            {(mediaError || (settings.screenMode === 'direct-url' && !mediaSrc)) && <p className="media-error" role="alert">Không phát được video. Kiểm tra URL hoặc chọn định dạng khác.</p>}
+          <div className={`screen-content mode-${settings.screenMode}`} style={{ width: `${settings.screenSize}%` }}>
+            {youtubeSrc ? <div key={`${playlistIndex}:${youtubeSrc}`} ref={youtubeContainerRef} className="youtube-player-host" /> : mediaSrc ? <video key={`${playlistIndex}:${mediaSrc}`} src={mediaSrc} controls playsInline muted={quietMode} onEnded={advancePlaylist} onError={() => setMediaError(true)} /> : settings.screenMode === 'screen-share' ? screenStream ? <><video ref={screenVideoRef} autoPlay playsInline muted /><button className="screen-share-stop" onClick={stopScreenShare}>Dừng chia sẻ</button></> : <div className="screen-share-prompt"><MonitorPlay size={30} /><b>Chia sẻ màn hình hoặc cửa sổ</b><small>Chọn cửa sổ game, ứng dụng hoặc toàn bộ màn hình trong hộp thoại của trình duyệt.</small><button className="button button-primary" onClick={() => void startScreenShare()}><MonitorPlay size={15} /> Bắt đầu chia sẻ</button>{screenShareError && <small role="alert">{screenShareError}</small>}</div> : settings.screenMode === 'direct-url' && playlist.length === 0 ? <div className="playlist-empty"><Film size={30} /><b>Danh sách phát đang trống</b><small>Thêm mỗi URL video hoặc YouTube trên một dòng trong phần cài đặt.</small></div> : settings.screenMode === 'local-video' ? <label className="screen-upload"><Film size={30} /><b>{fileMessage || 'Chọn video trong phiên này'}</b><small>Video chỉ phát trong trình duyệt hiện tại</small><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label> : settings.screenMode === 'external' ? <div className="external-screen"><MonitorPlay size={32} /><b>Vùng ghép nội dung OBS</b><small>Đặt nguồn game/video bên dưới canvas trong phần mềm phát sóng.</small></div> : <div className="screen-art"><div className="screen-art-stars">✦　·　✧　·　✦</div><span className="screen-kicker">THEATER No. 01</span><div className="screen-title">Đêm xem<br /><em>chung</em></div><div className="screen-filmstrip"><span>◈</span><i /><span>◈</span><i /><span>◈</span></div><div className="screen-caption">MỘT CHIẾC RẠP · RẤT NHIỀU CẢM XÚC</div><div className="screen-orbit orbit-a" /><div className="screen-orbit orbit-b" /></div>}
+            {(mediaError || (settings.screenMode === 'direct-url' && !youtubeSrc && !mediaSrc)) && <p className="media-error" role="alert">Không phát được video. Kiểm tra link YouTube hoặc URL video trực tiếp.</p>}
           </div>
-          <div className="stage-controls"><span><Play size={13} fill="currentColor" /> SÂN KHẤU</span><span>{settings.screenMode === 'placeholder' ? 'Nội dung có quyền phát sóng' : settings.screenMode.replace('-', ' ').toUpperCase()}</span><button title="Ẩn/hiện điều khiển" onClick={() => setShowControls(!showControls)}>{showControls ? <ChevronDown size={16} /> : <MoreHorizontal size={16} />}</button></div>
-          {showControls && <div className="floating-scene-controls"><button title="Chế độ rạp" onClick={toggleQuietMode}><Moon size={14} /></button><button title="Âm thanh" onClick={toggleQuietMode}><AudioLines size={14} /></button><button title="Chọn video"><label><Plus size={14} /><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label></button></div>}
+          <div className="stage-controls"><span><Play size={13} fill="currentColor" /> SÂN KHẤU</span><span>{settings.screenMode === 'placeholder' ? 'Nội dung có quyền phát sóng' : settings.screenMode.replace('-', ' ').toUpperCase()}</span>{settings.screenMode === 'direct-url' && playlist.length > 1 && <div className="playlist-controls"><button title="Video trước" aria-label="Video trước" disabled={playlistIndex === 0} onClick={rewindPlaylist}><SkipBack size={14} /></button><small>{playlistIndex + 1} / {playlist.length}</small><button title="Video tiếp theo" aria-label="Video tiếp theo" disabled={playlistIndex >= playlist.length - 1} onClick={advancePlaylist}><SkipForward size={14} /></button></div>}<button title="Ẩn/hiện điều khiển" onClick={() => setShowControls(!showControls)}>{showControls ? <ChevronDown size={16} /> : <MoreHorizontal size={16} />}</button></div>
+          {showControls && settings.screenMode !== 'screen-share' && <div className="floating-scene-controls"><button title="Chế độ rạp" onClick={toggleQuietMode}><Moon size={14} /></button><button title="Âm thanh" onClick={toggleQuietMode}><AudioLines size={14} /></button><button title="Chọn video"><label><Plus size={14} /><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label></button></div>}
         </div>
         <div className="audience-section"><div className="audience-heading"><span><Users size={16} /> KHÁN GIẢ <b>{occupied}/12</b></span><span className="queue-label">{seatState.queue.length > 0 ? `${seatState.queue.length} đang chờ` : 'ghế trống đang mở'}</span></div><div className="seats-grid">{seatState.seats.map((seat) => <SeatTile key={seat.id} seat={seat} compact={!settings.showNicknames} />)}</div><div className="seat-footnote"><span><i className="seat-legend occupied-legend" /> Đang xem</span><span><i className="seat-legend" /> Ghế trống</span><span><i className="seat-legend locked-legend" /> Đã khóa</span></div></div>
       </div>
@@ -369,7 +503,7 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
         <div className="mock-event-actions">
           <button disabled={occupied < 2} onClick={() => act('reaction-heart')}>💗 Gửi tim</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-wave')}>👋 Vẫy chào</button>
-          <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button><button onClick={() => act('join')}><Plus size={14} /> !join</button><button onClick={() => act('leave')}><X size={14} /> !leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button><button onClick={() => act('join')}><Plus size={14} /> join</button><button onClick={() => act('leave')}><X size={14} /> leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
       </div>}
     </section>
 
