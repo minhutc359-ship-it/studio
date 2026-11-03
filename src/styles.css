@@ -247,3 +247,12 @@ input::placeholder { color: #746d70; }
   .mock-event-popover { width: min(300px, calc(100vw - 20px)); }
   .seat-chat-bubble { max-width: min(150px, 42vw); font-size: 8px; }
 }
+[hidden] { display: none !important; }
+.connection-pill.error { color: #ffb5b5; }
+.connection-pill.connecting { color: #f0c578; }
+.media-error { position: absolute; inset: auto 8px 36px; padding: 10px; background: #39212a; color: #ffe0e0; }
+.seat-tile:focus-visible, .provider-option:focus-visible { outline: 2px solid #6cdae5; outline-offset: 2px; }
+.seat-tile { transition: border-color .2s, background-color .2s; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

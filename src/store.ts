@@ -60,6 +60,7 @@ export interface ObservedGift {
 
 interface StudioState {
   settings: StudioSettings
+  videoFile?: File
   seatState: SeatState
   mockAudienceIds: string[]
   chat: ChatEntry[]
@@ -67,7 +68,9 @@ interface StudioState {
   seatAnimations: Record<string, { id: string; kind: SeatAnimation }>
   highlightedGiftId: string | null
   observedGifts: ObservedGift[]
-  connection: 'waiting' | 'connected' | 'reconnecting'
+  connection: 'waiting' | 'connected' | 'reconnecting' | 'connecting' | 'error'
+  connectionDetail: string
+  resetSession: () => void
   viewerCount: number
   likes: number
   gifts: number
@@ -117,9 +120,11 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   highlightedGiftId: null,
   observedGifts: [],
   connection: 'waiting',
-  viewerCount: 128,
-  likes: 2460,
-  gifts: 18,
+  connectionDetail: '',
+  resetSession: () => set({ seatState: createSeatState(), mockAudienceIds: [], chat: [], seatBubbles: {}, seatAnimations: {}, highlightedGiftId: null, observedGifts: [], viewerCount: 0, likes: 0, gifts: 0 }),
+  viewerCount: 0,
+  likes: 0,
+  gifts: 0,
   quietMode: false,
   updateSettings: (patch) => {
     const settings = { ...get().settings, ...patch }
@@ -136,7 +141,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
     if (command?.kind === 'join') {
       seatState = seatReducer(seatState, { type: 'join', viewer })
-      response = seatState.seats.some((seat) => seat.viewer?.id === viewer.id) ? 'đã vào rạp 🍿' : 'đã vào hàng chờ ⏳'
+      response = seatState.seats.some((seat) => seat.viewer?.id === viewer.id) ? 'đã vào rạp 🍿'
+        : seatState.queue.some((queued) => queued.id === viewer.id) ? 'đã vào hàng chờ ⏳' : 'hàng chờ đã đầy'
       kind = 'system'
     } else if (command?.kind === 'leave') {
       const hadSeat = seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
