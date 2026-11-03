@@ -329,6 +329,17 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
         <div className="action-item"><span className="action-emoji">💬</span><span><b>Trò chuyện</b><small>Bình luận, chia sẻ cảm xúc</small></span></div>
         <div className="action-item"><span className="action-emoji">💗</span><span><b>Thả reaction</b><small>Gõ !react heart 2 để gửi tim đến ghế 2</small></span></div>
         <div className="action-item"><span className="action-emoji">🎁</span><span><b>Chọn ghế</b><small>Gõ !join để tham gia</small></span></div>
+        <div className="viewer-command-guide">
+          <div className="rail-title"><MessageCircle size={13} /><span>LỆNH KHÁN GIẢ</span></div>
+          <div><code>!join</code><span>Vào ghế trống hoặc hàng chờ</span></div>
+          <div><code>!seat 1–12</code><span>Chọn / đổi sang ghế trống</span></div>
+          <div><code>!leave</code><span>Rời ghế hoặc hàng chờ</span></div>
+          <div><code>!react heart 2</code><span>Gửi reaction đến ghế 2</span></div>
+          <div><code>!react heart</code><span>Thả tim cho cả rạp</span></div>
+          <div><code>!react wave</code><span>Chào cả rạp</span></div>
+          <div><code>!react cheer 2</code><span>Cổ vũ người ở ghế 2</span></div>
+          <div><code>!help</code><span>Xem hướng dẫn lệnh</span></div>
+        </div>
         <div className="rail-divider" />
         <div className="rail-title rail-title-small">{observedGifts.length ? 'QUÀ ĐÃ NHẬN' : 'ĐANG CHỜ QUÀ'}</div>
         <div className="gift-picks">{observedGifts.length ? observedGifts.slice(0, 6).map((gift) => <div key={gift.name} className="observed-gift"><span>🎁</span><b>{gift.name}</b><small>×{gift.count}</small></div>) : <p className="empty-gifts">Quà xuất hiện tại đây sau khi có gift event.</p>}</div>

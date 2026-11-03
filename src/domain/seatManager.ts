@@ -40,6 +40,35 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
   if (queue.length !== state.queue.length) state = { ...state, queue }
   if (action.type === 'join') {
     const alreadySeated = state.seats.find((seat) => seat.viewer?.id === action.viewer.id)
+    if (action.preferredSeat !== undefined) {
+      const preferred = state.seats.find((seat) => seat.id === action.preferredSeat)
+      if (!preferred || preferred.status === 'locked' || (preferred.viewer && preferred.viewer.id !== action.viewer.id)) return state
+      if (preferred.viewer?.id === action.viewer.id) {
+        return {
+          ...state,
+          seats: state.seats.map((seat) => seat.id === preferred.id
+            ? { ...seat, status: 'occupied', lastInteractionAt: now }
+            : seat),
+        }
+      }
+
+      const remainingQueue = state.queue.filter((viewer) => viewer.id !== action.viewer.id)
+      const nextViewer = alreadySeated ? remainingQueue[0] : undefined
+      return {
+        queue: alreadySeated && nextViewer ? remainingQueue.slice(1) : remainingQueue,
+        seats: state.seats.map((seat) => {
+          if (seat.id === preferred.id) {
+            return { id: seat.id, status: 'occupied', viewer: action.viewer, assignedAt: now, lastInteractionAt: now }
+          }
+          if (alreadySeated && seat.id === alreadySeated.id) {
+            return nextViewer
+              ? { id: seat.id, status: 'occupied', viewer: nextViewer, assignedAt: now, lastInteractionAt: now }
+              : { id: seat.id, status: 'empty' }
+          }
+          return seat
+        }),
+      }
+    }
     if (alreadySeated) {
       return {
         ...state,
@@ -50,14 +79,8 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
     }
     if (state.queue.some((viewer) => viewer.id === action.viewer.id)) return state
 
-    const preferred = action.preferredSeat !== undefined
-      ? state.seats.find((seat) => seat.id === action.preferredSeat)
-      : undefined
-    if (action.preferredSeat !== undefined && preferred?.status === 'locked') return state
     const available = (seat: Seat) => seat.status === 'empty'
-    const target = preferred && available(preferred)
-      ? preferred
-      : state.seats.find(available)
+    const target = state.seats.find(available)
 
     if (target) {
       const now = action.now ?? Date.now()

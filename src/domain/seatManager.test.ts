@@ -38,4 +38,28 @@ describe('seatReducer', () => {
     expect(state.seats.every((seat) => !seat.viewer)).toBe(true)
     expect(state.queue).toHaveLength(0)
   })
+
+  it('moves a seated viewer to a requested empty seat and does not displace another viewer', () => {
+    let state = createSeatState()
+    state = seatReducer(state, { type: 'join', viewer: viewer('a'), now: 1 })
+    state = seatReducer(state, { type: 'join', viewer: viewer('b'), now: 2 })
+    state = seatReducer(state, { type: 'join', viewer: viewer('a'), preferredSeat: 3, now: 3 })
+    expect(state.seats[0]?.status).toBe('empty')
+    expect(state.seats[2]?.viewer?.id).toBe('a')
+
+    const unchanged = seatReducer(state, { type: 'join', viewer: viewer('a'), preferredSeat: 2, now: 4 })
+    expect(unchanged.seats[1]?.viewer?.id).toBe('b')
+    expect(unchanged.seats[2]?.viewer?.id).toBe('a')
+  })
+
+  it('lets a queued viewer choose a specific empty seat', () => {
+    let state = createSeatState()
+    for (let index = 0; index < 11; index += 1) {
+      state = seatReducer(state, { type: 'join', viewer: viewer(String(index)), now: index })
+    }
+    state = { ...state, queue: [{ ...viewer('waiting'), requestedAt: 11 }] }
+    state = seatReducer(state, { type: 'join', viewer: viewer('waiting'), preferredSeat: 12, now: 20 })
+    expect(state.seats[11]?.viewer?.id).toBe('waiting')
+    expect(state.queue).toHaveLength(0)
+  })
 })

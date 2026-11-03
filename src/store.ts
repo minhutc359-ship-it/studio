@@ -160,7 +160,11 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       const before = seatState
       seatState = seatReducer(seatState, { type: 'join', viewer, preferredSeat: command.seatId })
       const assigned = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
-      response = assigned?.id === command.seatId ? `đã chọn ghế ${command.seatId}` : assigned ? `ghế ${command.seatId} đã có người, bạn đang ở ghế ${assigned.id}` : before === seatState ? 'không thể chọn ghế này' : 'đã vào hàng chờ'
+      const requestedSeat = seatState.seats.find((seat) => seat.id === command.seatId)
+      response = assigned?.id === command.seatId ? `đã chọn ghế ${command.seatId}`
+        : requestedSeat?.status === 'locked' ? `ghế ${command.seatId} đang khóa`
+          : requestedSeat?.viewer ? `ghế ${command.seatId} đã có người`
+            : assigned ? `đang ở ghế ${assigned.id}` : before === seatState ? 'không thể chọn ghế này' : 'đã vào hàng chờ'
       kind = 'system'
     } else if (command?.kind === 'react') {
       const source = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
@@ -188,16 +192,19 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (response && respond) nextChat.push(entry({ ...viewer, id: 'system', name: 'Rạp trưởng', avatar: '🎬' }, response, 'system'))
     const seated = !command && seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
     const bubbleId = `${viewer.id}-${Date.now()}`
-    const alreadySeated = state.seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
-    const newlySeated = !alreadySeated && seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
-    const animationKind: SeatAnimation | undefined = newlySeated ? 'enter' : seated ? 'talk' : undefined
+    const previousSeatId = state.seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.id
+    const currentSeatId = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.id
+    const newlySeated = previousSeatId === undefined && currentSeatId !== undefined
+    const movedSeat = previousSeatId !== undefined && currentSeatId !== previousSeatId
+    const seatActionBubble = (newlySeated || movedSeat) && command?.kind === 'seat'
+    const animationKind: SeatAnimation | undefined = newlySeated || movedSeat ? 'enter' : seated ? 'talk' : undefined
     const animationId = `${viewer.id}-${Date.now()}-${Math.random()}`
     const isMockLeave = command?.kind === 'leave' && state.mockAudienceIds.includes(viewer.id)
     set({
       seatState,
       chat: nextChat.slice(-24),
       ...(isMockLeave ? { mockAudienceIds: state.mockAudienceIds.filter((viewerId) => viewerId !== viewer.id), viewerCount: Math.max(0, state.viewerCount - 1) } : {}),
-      ...(seated ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: text.slice(0, 64) } } } : {}),
+      ...(seated || seatActionBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatActionBubble ? response : text)?.slice(0, 64) ?? '' } } } : {}),
       ...(animationKind ? { seatAnimations: { ...state.seatAnimations, [viewer.id]: { id: animationId, kind: animationKind } } } : {}),
     })
     if (command?.kind === 'react' && reactionSource !== undefined) {
@@ -223,7 +230,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         window.setTimeout(() => get().clearSeatAnimation(id, animationId), 1600)
       }
     }
-    if (seated) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
+    if (seated || seatActionBubble) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
     if (animationKind) window.setTimeout(() => get().clearSeatAnimation(viewer.id, animationId), animationKind === 'enter' ? 1400 : 1100)
   },
   clearSeatBubble: (viewerId, bubbleId) => set((state) => {

@@ -421,3 +421,30 @@ input::placeholder { color: #746d70; }
   background: #fff0da;
   border-color: #f3bf78;
 }
+
+.viewer-command-guide { display: grid; gap: 6px; padding: 10px 0 7px; border-bottom: 1px solid rgba(231,189,119,.18); }
+.viewer-command-guide .rail-title { margin: 0 0 2px; font-size: 8px; }
+.viewer-command-guide > div:not(.rail-title) { display: grid; gap: 3px; }
+.viewer-command-guide code { color: #f1d59d; font-size: 8px; white-space: nowrap; }
+.viewer-command-guide span { color: #a39a9b; font-size: 7px; line-height: 1.35; }
+.theater-scene .seat-avatar.audience-sprite {
+  left: 50%;
+  bottom: 26%;
+  width: clamp(54px, 5.5vw, 88px);
+  height: auto;
+  aspect-ratio: 5 / 4;
+  translate: -50% 0;
+  background-size: 400% 300%;
+}
+.theater-scene .seat-back { height: 40%; }
+.settings-seat-grid .seat-avatar.audience-sprite {
+  width: 36px;
+  height: auto;
+  aspect-ratio: 5 / 4;
+  background-size: 400% 300%;
+}
+@media (max-width: 720px) {
+  .theater-scene .seat-avatar.audience-sprite { width: clamp(42px, 11vw, 58px); bottom: 26%; }
+  .viewer-command-guide { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px 12px; }
+  .viewer-command-guide .rail-title { grid-column: 1 / -1; }
+}
