@@ -84,10 +84,11 @@ export function connectProvider(settings: StudioSettings, input: string) {
         if (total !== undefined || delta !== undefined) useStudioStore.setState({ likes: total ?? store.likes + (delta ?? 0) })
       }
       if (id && type === 'chat' && comment) store.addChat(viewer, comment.slice(0, 500))
+      if (id && type === 'leave') store.leaveViewer(id)
       if (id && type === 'member' && store.settings.seatMode !== 'manual-command') store.addChat(viewer, '!join', false)
       const gift = data.gift && typeof data.gift === 'object' && !Array.isArray(data.gift) ? data.gift as Record<string, unknown> : {}
       if (id && type === 'gift') store.addGiftEvent(viewer, typeof data.giftName === 'string' ? data.giftName : typeof gift.name === 'string' ? gift.name : '', count(data.repeatCount))
-      if (type === 'roomInfo' || type === 'chat' || type === 'gift' || type === 'like' || type === 'member') {
+      if (type === 'roomInfo' || type === 'chat' || type === 'gift' || type === 'like' || type === 'member' || type === 'leave') {
         attempts = 0
         if (store.connectionDetail) status('connected')
       }

@@ -20,6 +20,13 @@ describe('normalizeProviderEvent', () => {
     })).toMatchObject({ type: 'member', id: 'viewer_three' })
   })
 
+  it('normalizes per-viewer leave and disconnect aliases', () => {
+    for (const event of ['leave', 'memberLeave', 'viewerLeft', 'memberDisconnect', 'viewerDisconnect']) {
+      expect(normalizeProviderEvent({ event, data: { user: { uniqueId: 'viewer_exit' } } }))
+        .toMatchObject({ type: 'leave', id: 'viewer_exit' })
+    }
+  })
+
   it('normalizes chat message aliases without losing the comment', () => {
     expect(normalizeProviderEvent({
       type: 'chatMessage',

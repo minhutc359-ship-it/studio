@@ -53,19 +53,18 @@ export interface SeatBubble {
   image?: string
 }
 
-export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart' | 'oxygen' | 'wink' | 'cat-laugh' | 'cat-sideeye' | 'cat-cry'
+export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart' | 'oxygen' | 't1' | 'geng' | 'silent'
 
 const reactionIcons: Record<Reaction, string> = {
-  heart: '💗', cheer: '👏', wave: '👋', oxygen: '😷', wink: '😉',
-  'cat-laugh': '😹', 'cat-sideeye': '🙀', 'cat-cry': '😿',
+  heart: '💗', cheer: '👏', wave: '👋', oxygen: '😷', t1: '🔴', geng: '🟡', silent: '🤫',
 }
 const reactionImages: Partial<Record<Reaction, string>> = {
-  oxygen: '/assets/emotes/1f637.svg', wink: '/assets/emotes/1f609.svg',
-  'cat-laugh': '/assets/emotes/1f639.svg', 'cat-sideeye': '/assets/emotes/1f63c.svg', 'cat-cry': '/assets/emotes/1f63f.svg',
+  oxygen: '/assets/emotes/oxygen.png', t1: '/assets/emotes/t1.png',
+  geng: '/assets/emotes/geng.png', silent: '/assets/emotes/silent.png',
 }
 const reactionLabels: Record<Reaction, string> = {
   heart: 'gửi tim', cheer: 'cổ vũ', wave: 'vẫy chào', oxygen: 'thở oxy',
-  wink: 'nháy mắt T1-style', 'cat-laugh': 'mèo cười', 'cat-sideeye': 'mèo liếc', 'cat-cry': 'mèo khóc',
+  t1: 'T1', geng: 'Gen.G', silent: 'silent',
 }
 
 export interface ObservedGift {
@@ -103,7 +102,7 @@ interface StudioState {
   sendMockGift: () => void
   addGiftEvent: (viewer: Viewer, giftName: string, count?: number) => void
   touchViewer: (viewerId: string) => void
-  reclaimInactiveViewers: (before: number) => void
+  leaveViewer: (viewerId: string) => void
   addMockLikes: () => void
   setViewerCount: (count: number) => void
   toggleQuietMode: () => void
@@ -155,22 +154,21 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   touchViewer: (viewerId) => set((state) => ({
     seatState: seatReducer(state.seatState, { type: 'touch', viewerId }),
   })),
-  reclaimInactiveViewers: (before) => {
-    const current = get()
-    const staleSeats = current.seatState.seats.filter((seat) => seat.viewer && (seat.lastInteractionAt ?? 0) < before)
-    if (!staleSeats.length) return
-    const staleViewerIds = new Set(staleSeats.map((seat) => seat.viewer!.id))
-    const staleSeatIds = new Set(staleSeats.map((seat) => seat.id))
-    set((state) => ({
-      seatState: seatReducer(state.seatState, { type: 'reclaim-inactive', before }),
-      seatBubbles: Object.fromEntries(Object.entries(state.seatBubbles).filter(([viewerId]) => !staleViewerIds.has(viewerId))),
-      seatAnimations: Object.fromEntries(Object.entries(state.seatAnimations).filter(([viewerId]) => !staleViewerIds.has(viewerId))),
-      reactionCooldowns: Object.fromEntries(Object.entries(state.reactionCooldowns).filter(([seatId]) => !staleSeatIds.has(Number(seatId)))),
-    }))
-  },
+  leaveViewer: (viewerId) => set((state) => {
+    const leavingSeat = state.seatState.seats.find((seat) => seat.viewer?.id === viewerId)
+    const seatState = seatReducer(state.seatState, { type: 'leave', viewerId })
+    const seatBubbles = { ...state.seatBubbles }
+    const seatAnimations = { ...state.seatAnimations }
+    const reactionCooldowns = { ...state.reactionCooldowns }
+    delete seatBubbles[viewerId]
+    delete seatAnimations[viewerId]
+    if (leavingSeat) delete reactionCooldowns[leavingSeat.id]
+    return { seatState, seatBubbles, seatAnimations, reactionCooldowns }
+  }),
   addChat: (viewer, text, respond = true) => {
     const state = get()
-    const command = parseCommand(text)
+    const parsedCommand = parseCommand(text)
+    const command = parsedCommand?.kind === 'leave' && state.settings.provider !== 'mock' ? null : parsedCommand
     let seatState = state.seatState
     let response: string | undefined
     let reactionSeats: typeof seatState.seats = []
@@ -215,7 +213,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       kind = 'reaction'
     } else if (command?.kind === 'help') {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
-      response = 'Lệnh: !join · !leave · !seat 1–12 · !react heart/cheer/wave/oxygen/wink/cat-laugh/cat-sideeye/cat-cry [ghế]'
+      response = 'Emote chat: t1 · geng · oxi · silent · clap · wave'
       kind = 'system'
     } else {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
@@ -237,7 +235,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       seatState,
       chat: nextChat.slice(-24),
       ...(isMockLeave ? { mockAudienceIds: state.mockAudienceIds.filter((viewerId) => viewerId !== viewer.id), viewerCount: Math.max(0, state.viewerCount - 1) } : {}),
-      ...(seated || seatEntryBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatEntryBubble ? response : text)?.slice(0, 64) ?? '' } } } : {}),
+      ...(seated || seatEntryBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatEntryBubble ? response : text)?.slice(0, 500) ?? '' } } } : {}),
       ...(animationKind ? { seatAnimations: { ...state.seatAnimations, [viewer.id]: { id: animationId, kind: animationKind } } } : {}),
     })
     if (command?.kind === 'react' && reactionSource !== undefined) {
@@ -249,7 +247,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           ...current.seatBubbles,
           ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, {
             id: `${animationId}:bubble:${seat.viewer!.id}`,
-            text: seat.id === source ? `${reactionIcons[reaction]} ${command.seatId ? `→ Ghế ${command.seatId}` : reactionLabels[reaction]}` : `${reactionIcons[reaction]} Từ ghế ${source}`,
+            text: reactionIcons[reaction],
             image: reactionImages[reaction],
           }])),
         },

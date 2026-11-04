@@ -28,8 +28,6 @@ export type SeatAction =
   | { type: 'leave'; viewerId: string; now?: number }
   | { type: 'lock'; seatId: number; locked: boolean }
   | { type: 'touch'; viewerId: string; now?: number }
-  | { type: 'mark-inactive'; before: number }
-  | { type: 'reclaim-inactive'; before: number; now?: number }
 
 export function createSeatState(): SeatState {
   return { seats: Array.from({ length: 12 }, (_, index) => ({ id: index + 1, status: 'empty' })), queue: [] }
@@ -38,7 +36,16 @@ export function createSeatState(): SeatState {
 export function seatReducer(state: SeatState, action: SeatAction): SeatState {
   const now = 'now' in action ? action.now ?? Date.now() : Date.now()
   const queue = state.queue.filter((viewer) => now - viewer.requestedAt < 600_000)
-  if (queue.length !== state.queue.length) state = { ...state, queue }
+  let queueIndex = 0
+  const seats = state.seats.map((seat) => {
+    const nextViewer = queue[queueIndex]
+    if (seat.status !== 'empty' || !nextViewer) return seat
+    queueIndex += 1
+    return { id: seat.id, status: 'occupied' as const, viewer: nextViewer, assignedAt: now, lastInteractionAt: now }
+  })
+  if (queue.length !== state.queue.length || queueIndex > 0) {
+    state = { seats, queue: queue.slice(queueIndex) }
+  }
   if (action.type === 'join') {
     const alreadySeated = state.seats.find((seat) => seat.viewer?.id === action.viewer.id)
     if (action.preferredSeat !== undefined) {
@@ -85,6 +92,17 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
 
     if (target) {
       const now = action.now ?? Date.now()
+      const nextQueued = state.queue[0]
+      if (nextQueued) {
+        if (state.queue.length >= 100) return state
+        return {
+          ...state,
+          queue: [...state.queue.slice(1), { ...action.viewer, requestedAt: now }],
+          seats: state.seats.map((seat) => seat.id === target.id
+            ? { ...seat, status: 'occupied', viewer: nextQueued, assignedAt: now, lastInteractionAt: now }
+            : seat),
+        }
+      }
       return {
         ...state,
         seats: state.seats.map((seat) => seat.id === target.id
@@ -132,25 +150,5 @@ export function seatReducer(state: SeatState, action: SeatAction): SeatState {
     }
   }
 
-  if (action.type === 'reclaim-inactive') {
-    let remainingQueue = queue
-    let reclaimed = false
-    const seats = state.seats.map((seat) => {
-      if (!seat.viewer || (seat.lastInteractionAt ?? 0) >= action.before) return seat
-      reclaimed = true
-      const nextViewer = remainingQueue[0]
-      if (nextViewer) remainingQueue = remainingQueue.slice(1)
-      return nextViewer
-        ? { id: seat.id, status: 'occupied' as const, viewer: nextViewer, assignedAt: now, lastInteractionAt: now }
-        : { id: seat.id, status: 'empty' as const }
-    })
-    return reclaimed ? { seats, queue: remainingQueue } : state
-  }
-
-  return {
-    ...state,
-    seats: state.seats.map((seat) => seat.viewer && seat.status === 'occupied' && (seat.lastInteractionAt ?? 0) < action.before
-      ? { ...seat, status: 'inactive' }
-      : seat),
-  }
+  return state
 }

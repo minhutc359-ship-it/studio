@@ -23,13 +23,23 @@ describe('seatReducer', () => {
     expect(state.queue).toHaveLength(0)
   })
 
-  it('does not assign a locked seat or reclaim inactive seats automatically', () => {
+  it('fills an open seat from the existing queue before seating a new arrival', () => {
+    let state = createSeatState()
+    state = { ...state, queue: [{ ...viewer('waiting'), requestedAt: 1 }] }
+    state = seatReducer(state, { type: 'join', viewer: viewer('new'), now: 2 })
+
+    expect(state.seats[0]?.viewer?.id).toBe('waiting')
+    expect(state.seats[1]?.viewer?.id).toBe('new')
+    expect(state.queue).toHaveLength(0)
+  })
+
+  it('does not assign a locked seat and keeps a viewer until an explicit leave', () => {
     let state = seatReducer(createSeatState(), { type: 'lock', seatId: 1, locked: true })
     state = seatReducer(state, { type: 'join', viewer: viewer('a'), now: 1 })
-    state = seatReducer(state, { type: 'mark-inactive', before: 2 })
     expect(state.seats[0]?.status).toBe('locked')
-    expect(state.seats[1]?.status).toBe('inactive')
+    expect(state.seats[1]?.status).toBe('occupied')
     expect(state.seats[1]?.viewer?.id).toBe('a')
+    expect(state.seats[1]?.lastInteractionAt).toBe(1)
   })
 
   it('rejects a request for a locked seat without assigning another seat', () => {
@@ -63,24 +73,19 @@ describe('seatReducer', () => {
     expect(state.queue).toHaveLength(0)
   })
 
-  it('reclaims a stale seat and moves the next queued viewer into it', () => {
+  it('keeps quiet viewers until explicit leave, then fills from the queue', () => {
     let state = createSeatState()
-    state = seatReducer(state, { type: 'join', viewer: viewer('stale'), now: 100 })
+    for (let index = 0; index < 12; index += 1) {
+      state = seatReducer(state, { type: 'join', viewer: viewer(index === 0 ? 'stale' : `seated-${index}`), now: index + 100 })
+    }
     state = { ...state, queue: [{ ...viewer('waiting'), requestedAt: 200 }] }
 
-    state = seatReducer(state, { type: 'reclaim-inactive', before: 1_000, now: 1_000 })
+    const afterSilence = seatReducer(state, { type: 'touch', viewerId: 'other', now: 1_000 })
+    expect(afterSilence.seats[0]?.viewer?.id).toBe('stale')
+    state = seatReducer(afterSilence, { type: 'leave', viewerId: 'stale', now: 1_001 })
 
     expect(state.seats[0]?.viewer?.id).toBe('waiting')
-    expect(state.seats[0]?.lastInteractionAt).toBe(1_000)
+    expect(state.seats[0]?.lastInteractionAt).toBe(1_001)
     expect(state.queue).toHaveLength(0)
-  })
-
-  it('keeps a viewer whose last event is newer than the reclaim cutoff', () => {
-    let state = createSeatState()
-    state = seatReducer(state, { type: 'join', viewer: viewer('active'), now: 950 })
-
-    const unchanged = seatReducer(state, { type: 'reclaim-inactive', before: 900, now: 1_000 })
-
-    expect(unchanged.seats[0]?.viewer?.id).toBe('active')
   })
 })

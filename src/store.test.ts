@@ -34,6 +34,33 @@ describe('chat seat bubbles', () => {
     expect(state.seatAnimations[viewer.id]?.kind).toBe('heart')
   })
 
+  it('renders an image emote when a viewer sends only its keyword', () => {
+    const viewer = { id: 'viewer-t1', name: 'Viewer T1', avatar: '🎟️' }
+    const store = useStudioStore.getState()
+
+    store.addChat(viewer, 'join', false)
+    useStudioStore.getState().addChat(viewer, 't1', false)
+
+    const state = useStudioStore.getState()
+    expect(state.seatBubbles[viewer.id]?.image).toBe('/assets/emotes/t1.png')
+    expect(state.seatAnimations[viewer.id]?.kind).toBe('t1')
+  })
+
+  it('shows the full normalized WebSocket chat text in the seated viewer bubble', () => {
+    const viewer = { id: 'viewer-chat', name: 'Viewer Chat', avatar: '🎟️' }
+    const comment = 'Cả nhà ơi, xem trận này vui quá! Mọi người đang cổ vũ đội nào vậy?'
+    const event = normalizeProviderEvent({
+      event: 'chat',
+      data: { user: { uniqueId: viewer.id, nickname: viewer.name }, comment },
+    })
+    useStudioStore.getState().addChat(viewer, 'join', false)
+    useStudioStore.getState().addChat(viewer, event.comment, false)
+
+    const state = useStudioStore.getState()
+    expect(state.seatBubbles[viewer.id]?.text).toBe(comment)
+    expect(state.chat[state.chat.length - 1]?.text).toBe(comment)
+  })
+
   it('uses distinct bubble and sprite IDs for both seats targeted by a reaction', () => {
     const first = { id: 'viewer-first', name: 'Viewer First', avatar: '🎟️' }
     const second = { id: 'viewer-second', name: 'Viewer Second', avatar: '🎟️' }
@@ -52,6 +79,10 @@ describe('chat seat bubbles', () => {
     expect(new Set(effectIds).size).toBe(4)
     expect(state.seatAnimations[first.id]?.kind).toBe('cheer')
     expect(state.seatAnimations[second.id]?.kind).toBe('cheer')
+    expect(state.seatBubbles[first.id]?.text).toBe('👏')
+    expect(state.seatBubbles[second.id]?.text).toBe('👏')
+    expect(state.seatBubbles[first.id]?.text).not.toContain('ghế')
+    expect(state.seatBubbles[second.id]?.text).not.toContain('ghế')
   })
 
   it('routes a reaction with a different provider identity field to the existing seat', () => {
@@ -88,23 +119,40 @@ describe('chat seat bubbles', () => {
     expect(seat?.lastInteractionAt).toBeGreaterThanOrEqual(before)
   })
 
-  it('releases a stale viewer seat and clears its transient bubble and animation', () => {
-    const viewer = { id: 'viewer-stale', name: 'Viewer Stale', avatar: '🎟️' }
-    useStudioStore.getState().addChat(viewer, 'join', false)
-    useStudioStore.setState((state) => ({
-      seatState: {
-        ...state.seatState,
-        seats: state.seatState.seats.map((seat) => seat.viewer?.id === viewer.id
-          ? { ...seat, lastInteractionAt: 100 }
-          : seat),
-      },
+  it('removes a WS-leaving viewer and fills their seat from the queue', () => {
+    const viewers = Array.from({ length: 13 }, (_, index) => ({
+      id: `viewer-${index}`,
+      name: `Viewer ${index}`,
+      avatar: '🎟️',
     }))
+    for (const viewer of viewers) useStudioStore.getState().addChat(viewer, 'join', false)
+    useStudioStore.getState().leaveViewer('viewer-0')
+    const state = useStudioStore.getState()
+    expect(state.seatState.seats[0]?.viewer?.id).toBe('viewer-12')
+    expect(state.seatState.queue).toHaveLength(0)
+    expect(state.seatBubbles['viewer-0']).toBeUndefined()
+    expect(state.seatAnimations['viewer-0']).toBeUndefined()
+  })
 
-    useStudioStore.getState().reclaimInactiveViewers(1_000)
+  it('removes a WS-leaving viewer from the waiting queue', () => {
+    for (let index = 0; index < 13; index += 1) {
+      useStudioStore.getState().addChat({ id: `queue-viewer-${index}`, name: `Viewer ${index}`, avatar: '🎟️' }, 'join', false)
+    }
+    useStudioStore.getState().leaveViewer('queue-viewer-12')
 
     const state = useStudioStore.getState()
-    expect(state.seatState.seats.some((seat) => seat.viewer?.id === viewer.id)).toBe(false)
-    expect(state.seatBubbles[viewer.id]).toBeUndefined()
-    expect(state.seatAnimations[viewer.id]).toBeUndefined()
+    expect(state.seatState.queue.some((viewer) => viewer.id === 'queue-viewer-12')).toBe(false)
+    expect(state.seatState.seats.filter((seat) => seat.viewer)).toHaveLength(12)
+  })
+
+  it('does not release a real-provider seat from a chat leave command', () => {
+    const viewer = { id: 'viewer-provider', name: 'Viewer Provider', avatar: '🎟️' }
+    useStudioStore.getState().updateSettings({ provider: 'tiktools' })
+    useStudioStore.getState().addChat(viewer, 'join', false)
+    useStudioStore.getState().addChat(viewer, '!leave', false)
+
+    expect(useStudioStore.getState().seatState.seats[0]?.viewer?.id).toBe(viewer.id)
+    useStudioStore.getState().leaveViewer(viewer.id)
+    expect(useStudioStore.getState().seatState.seats[0]?.viewer).toBeUndefined()
   })
 })

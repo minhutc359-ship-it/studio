@@ -1,4 +1,4 @@
-export type Reaction = 'heart' | 'cheer' | 'wave' | 'oxygen' | 'wink' | 'cat-laugh' | 'cat-sideeye' | 'cat-cry'
+export type Reaction = 'heart' | 'cheer' | 'wave' | 'oxygen' | 't1' | 'geng' | 'silent'
 
 export type Command =
   | { kind: 'join' }
@@ -7,8 +7,12 @@ export type Command =
   | { kind: 'react'; reaction: Reaction; seatId?: number }
   | { kind: 'help' }
 
-const isReaction = (value: string | undefined): value is Reaction =>
-  value !== undefined && ['heart', 'cheer', 'wave', 'oxygen', 'wink', 'cat-laugh', 'cat-sideeye', 'cat-cry'].includes(value)
+const isReaction = (value: string | undefined): value is Reaction | 'clap' | 'oxi' =>
+  value !== undefined && ['heart', 'cheer', 'clap', 'wave', 'oxygen', 'oxi', 't1', 'geng', 'silent'].includes(value)
+
+const bareReactionAliases: Record<string, Reaction> = {
+  t1: 't1', geng: 'geng', oxi: 'oxygen', silent: 'silent', clap: 'cheer', wave: 'wave',
+}
 
 export function parseCommand(message: string): Command | null {
   const [rawToken, argument, target, extra] = message.trim().toLocaleLowerCase('vi').split(/\s+/)
@@ -21,8 +25,12 @@ export function parseCommand(message: string): Command | null {
     return seatId >= 1 && seatId <= 12 ? { kind: 'seat', seatId } : null
   }
   if (token === 'react' && isReaction(argument) && !extra) {
-    if (target === undefined) return { kind: 'react', reaction: argument }
-    if (/^(?:[1-9]|1[0-2])$/.test(target)) return { kind: 'react', reaction: argument, seatId: Number(target) }
+    const reaction = argument === 'clap' ? 'cheer' : argument === 'oxi' ? 'oxygen' : argument
+    if (target === undefined) return { kind: 'react', reaction }
+    if (/^(?:[1-9]|1[0-2])$/.test(target)) return { kind: 'react', reaction, seatId: Number(target) }
+  }
+  if (!argument && token && bareReactionAliases[token]) {
+    return { kind: 'react', reaction: bareReactionAliases[token] }
   }
   return null
 }

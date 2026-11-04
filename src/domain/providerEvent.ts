@@ -26,6 +26,8 @@ export function normalizeProviderEvent(value: unknown): ProviderEvent {
   const rawType = eventName(envelope.event ?? envelope.type ?? envelope.eventType ?? envelope.event_name ?? data.event ?? data.type)
   const type = ['join', 'member_join', 'viewer_join', 'viewer_joined', 'member_joined', 'member'].includes(rawType)
     ? 'member'
+    : ['leave', 'member_leave', 'viewer_leave', 'viewer_left', 'member_left', 'disconnect', 'member_disconnect', 'viewer_disconnect'].includes(rawType)
+      ? 'leave'
     : rawType === 'chat_message' ? 'chat' : rawType
   const identityKeys = [
     user.userId, user.user_id, user.id, user.uid, user.secUid, user.sec_uid,

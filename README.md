@@ -26,7 +26,7 @@ npm run build
 4. Chọn ghế trống để khóa/mở khóa; ghế không bị thu hồi tự động. Hàng chờ tối đa 100 người và hết hạn sau 10 phút.
 5. Dùng tab `Màn chiếu` để chọn placeholder, video trong phiên, URL trực tiếp (MP4/HLS hoặc YouTube), chia sẻ màn hình/cửa sổ hoặc composition từ OBS; chỉnh kích thước bằng thanh `Kích thước màn chiếu`.
 
-Chia sẻ màn hình cần trình duyệt hiện đại và quyền chia sẻ do người dùng cấp. Bấm **Bắt đầu chia sẻ** trên Live canvas, chọn màn hình/cửa sổ trong hộp thoại trình duyệt; dừng chia sẻ trên canvas hoặc từ thanh điều khiển của trình duyệt.
+Chia sẻ màn hình cần trình duyệt hiện đại và quyền chia sẻ do người dùng cấp. Trong Live canvas, chọn riêng **màn 1 ưu tiên** và **màn 2 dự phòng**; trình duyệt yêu cầu xác nhận quyền cho từng nguồn. Khi track màn chính báo mất tín hiệu hoặc kết thúc, canvas tự chuyển sang màn dự phòng; nếu màn chính hoạt động lại sẽ ưu tiên quay về màn 1. Dừng chia sẻ trên canvas hoặc từ thanh điều khiển của trình duyệt.
 
 Với YouTube, dán link watch, `youtu.be`, Shorts hoặc LIVE vào trường URL video. Video phải cho phép nhúng; nội dung bị giới hạn tuổi hoặc chủ video tắt embedding có thể không phát.
 
@@ -41,8 +41,8 @@ Trong chế độ `Video URL`, dán mỗi URL vào một dòng để tạo playl
 ## Giới hạn đã biết
 
 - Adapter TikFinity và TikTools cần xác nhận payload và hành vi reconnect trong buổi LIVE thật.
-- TikFinity không gửi event riêng cho từng người xem vào phòng theo schema hiện tại; viewer cần comment `join` để được xếp ghế. Auto seat chỉ hoạt động khi provider thực sự gửi event member/join.
-- Ghế được tự thu hồi nếu không nhận event có định danh viewer trong 60 giây; đây là heuristic vì provider không cung cấp danh sách hiện diện đầy đủ. Viewer vẫn đang xem nhưng không chat, react, like hay gửi quà có thể bị nhả ghế.
+- Auto seat và rời ghế cần event có định danh viewer từ provider. Adapter hiện chuẩn hóa các tên `leave`, `memberLeave`, `viewerLeft`, `memberDisconnect`, `viewerDisconnect`; nếu provider dùng tên event khác cần bổ sung theo payload thực tế. Khi chưa có leave event, ghế được giữ nguyên; chat `!leave` chỉ dành cho mock testing.
+- Ghế và vị trí queue được giữ nguyên khi viewer im lặng hoặc mất WebSocket. Chỉ event `leave`/`disconnect` có định danh viewer từ provider mới gỡ họ khỏi ghế/queue; khi ghế trống, viewer đầu queue được chuyển vào.
 - Không có backend, đồng bộ cửa sổ, tài khoản hoặc API phát sóng.
 - URL video có thể bị chặn bởi CORS, DRM hoặc chính sách trình duyệt. Chỉ phát nội dung có quyền sử dụng.
 - Settings lưu trong localStorage; preset JSON không chứa token/key. Chat và trạng thái ghế chỉ giữ trong RAM.
@@ -51,4 +51,8 @@ Trong chế độ `Video URL`, dán mỗi URL vào một dòng để tạo playl
 Xem đặc tả sản phẩm tại [VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md](./VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md).
 ### Tương tác giữa các ghế
 
-Sau khi vào ghế bằng `!join`, khán giả có thể gõ `!react heart 2`, `!react wave 2` hoặc `!react cheer 2` để gửi tim, vẫy chào hoặc cổ vũ người ở ghế 2. Bỏ số ghế để thả biểu cảm cho cả rạp. Trong Mock Event Deck, thêm hai khán giả để thử các nút tương tác.
+Các từ khóa chat `t1`, `geng`, `oxi`, `silent`, `clap` và `wave` sẽ kích hoạt reaction trực tiếp. Không cần thêm tiền tố lệnh. Trong Mock Event Deck, thêm hai khán giả để thử.
+
+### Image attribution
+
+The T1, Gen.G, silent, and oxygen images in `public/assets/emotes` were supplied by the project owner. Confirm permission to use and redistribute them before publishing the app.

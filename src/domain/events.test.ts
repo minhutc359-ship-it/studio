@@ -17,12 +17,25 @@ describe('parseCommand', () => {
     expect(parseCommand('!react heart 2 extra')).toBeNull()
   })
 
-  it('parses oxygen, esports wink, and cat meme emotes', () => {
+  it('parses team, silent, and oxygen image emotes', () => {
     expect(parseCommand('!react oxygen')).toEqual({ kind: 'react', reaction: 'oxygen' })
-    expect(parseCommand('!react wink 2')).toEqual({ kind: 'react', reaction: 'wink', seatId: 2 })
-    expect(parseCommand('!react cat-laugh')).toEqual({ kind: 'react', reaction: 'cat-laugh' })
-    expect(parseCommand('!react cat-sideeye 3')).toEqual({ kind: 'react', reaction: 'cat-sideeye', seatId: 3 })
-    expect(parseCommand('!react cat-cry')).toEqual({ kind: 'react', reaction: 'cat-cry' })
+    expect(parseCommand('!react t1 2')).toEqual({ kind: 'react', reaction: 't1', seatId: 2 })
+    expect(parseCommand('!react geng')).toEqual({ kind: 'react', reaction: 'geng' })
+    expect(parseCommand('!react silent 3')).toEqual({ kind: 'react', reaction: 'silent', seatId: 3 })
+  })
+
+  it('accepts clap as an alias for the cheer reaction', () => {
+    expect(parseCommand('react clap')).toEqual({ kind: 'react', reaction: 'cheer' })
+  })
+
+  it('turns the six standalone emote words into reactions', () => {
+    expect(parseCommand(' T1 ')).toEqual({ kind: 'react', reaction: 't1' })
+    expect(parseCommand('geng')).toEqual({ kind: 'react', reaction: 'geng' })
+    expect(parseCommand('oxi')).toEqual({ kind: 'react', reaction: 'oxygen' })
+    expect(parseCommand('silent')).toEqual({ kind: 'react', reaction: 'silent' })
+    expect(parseCommand('clap')).toEqual({ kind: 'react', reaction: 'cheer' })
+    expect(parseCommand('wave')).toEqual({ kind: 'react', reaction: 'wave' })
+    expect(parseCommand('t1 tonight')).toBeNull()
   })
 
   it('rejects invalid seats and unsupported commands', () => {
