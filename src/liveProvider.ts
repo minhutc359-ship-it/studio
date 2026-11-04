@@ -1,5 +1,6 @@
 import { providerUrl } from './domain/providerConfig'
 import { normalizeProviderEvent, resolveProviderViewerId } from './domain/providerEvent'
+import { reconnectDelay } from './domain/reconnectPolicy'
 import { useStudioStore, type StudioSettings } from './store'
 
 const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
@@ -48,13 +49,10 @@ export function connectProvider(settings: StudioSettings, input: string) {
     socket.onclose = () => {
       window.clearTimeout(timeout)
       if (stopped) return
-      if (++attempts > 5) {
-        status('error', 'Đã hết lượt thử. Kiểm tra TikFinity, mạng hoặc JWT rồi kết nối lại.')
-        return
-      }
-      const seconds = 2 ** attempts
-      status('reconnecting', `Thử lại sau ${seconds} giây (${attempts}/5).`)
-      retry = window.setTimeout(open, seconds * 1000)
+      attempts += 1
+      const delay = reconnectDelay(attempts - 1)
+      status('reconnecting', `Thử lại sau ${(delay / 1000).toFixed(1)} giây (lần ${attempts}).`)
+      retry = window.setTimeout(open, delay)
     }
     socket.onmessage = ({ data: frame }) => {
       if (stopped || typeof frame !== 'string' || frame.length > 256_000) return

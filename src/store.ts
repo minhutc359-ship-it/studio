@@ -50,12 +50,23 @@ export interface ChatEntry {
 export interface SeatBubble {
   id: string
   text: string
+  image?: string
 }
 
-export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart'
+export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart' | 'oxygen' | 'wink' | 'cat-laugh' | 'cat-sideeye' | 'cat-cry'
 
-const reactionIcons: Record<Reaction, string> = { heart: '💗', cheer: '👏', wave: '👋' }
-const reactionLabels: Record<Reaction, string> = { heart: 'gửi tim', cheer: 'cổ vũ', wave: 'vẫy chào' }
+const reactionIcons: Record<Reaction, string> = {
+  heart: '💗', cheer: '👏', wave: '👋', oxygen: '😷', wink: '😉',
+  'cat-laugh': '😹', 'cat-sideeye': '🙀', 'cat-cry': '😿',
+}
+const reactionImages: Partial<Record<Reaction, string>> = {
+  oxygen: '/assets/emotes/1f637.svg', wink: '/assets/emotes/1f609.svg',
+  'cat-laugh': '/assets/emotes/1f639.svg', 'cat-sideeye': '/assets/emotes/1f63c.svg', 'cat-cry': '/assets/emotes/1f63f.svg',
+}
+const reactionLabels: Record<Reaction, string> = {
+  heart: 'gửi tim', cheer: 'cổ vũ', wave: 'vẫy chào', oxygen: 'thở oxy',
+  wink: 'nháy mắt T1-style', 'cat-laugh': 'mèo cười', 'cat-sideeye': 'mèo liếc', 'cat-cry': 'mèo khóc',
+}
 
 export interface ObservedGift {
   name: string
@@ -204,7 +215,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       kind = 'reaction'
     } else if (command?.kind === 'help') {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
-      response = 'Lệnh: join · leave · seat 1–12 · react heart/cheer/wave [ghế]'
+      response = 'Lệnh: !join · !leave · !seat 1–12 · !react heart/cheer/wave/oxygen/wink/cat-laugh/cat-sideeye/cat-cry [ghế]'
       kind = 'system'
     } else {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
@@ -238,7 +249,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           ...current.seatBubbles,
           ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, {
             id: `${animationId}:bubble:${seat.viewer!.id}`,
-            text: seat.id === source ? `${reactionIcons[reaction]} ${command.seatId ? `→ Ghế ${command.seatId}` : ''}` : `${reactionIcons[reaction]} Từ ghế ${source}`,
+            text: seat.id === source ? `${reactionIcons[reaction]} ${command.seatId ? `→ Ghế ${command.seatId}` : reactionLabels[reaction]}` : `${reactionIcons[reaction]} Từ ghế ${source}`,
+            image: reactionImages[reaction],
           }])),
         },
         seatAnimations: {

@@ -465,14 +465,17 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
         <div className="action-item"><span className="action-emoji">🎁</span><span><b>Chọn ghế</b><small>Gõ join để tham gia</small></span></div>
         <div className="viewer-command-guide">
           <div className="rail-title"><MessageCircle size={13} /><span>LỆNH KHÁN GIẢ</span></div>
-          <div><code>join</code><span>Vào ghế trống hoặc hàng chờ</span></div>
-          <div><code>seat 1–12</code><span>Chọn / đổi sang ghế trống</span></div>
-          <div><code>leave</code><span>Rời ghế hoặc hàng chờ</span></div>
-          <div><code>react heart 2</code><span>Gửi reaction đến ghế 2</span></div>
-          <div><code>react heart</code><span>Thả tim cho cả rạp</span></div>
-          <div><code>react wave</code><span>Chào cả rạp</span></div>
-          <div><code>react cheer 2</code><span>Cổ vũ người ở ghế 2</span></div>
-          <div><code>help</code><span>Xem hướng dẫn lệnh</span></div>
+          <div><code>!join</code><span>Vào ghế trống hoặc hàng chờ</span></div>
+          <div><code>!seat 1–12</code><span>Chọn / đổi sang ghế trống</span></div>
+          <div><code>!leave</code><span>Rời ghế hoặc hàng chờ</span></div>
+          <div><code>!react heart 2</code><span>Gửi reaction đến ghế 2</span></div>
+          <div><code>!react heart</code><span>Thả tim cho cả rạp</span></div>
+          <div><code>!react wave</code><span>Chào cả rạp</span></div>
+          <div><code>!react cheer 2</code><span>Cổ vũ người ở ghế 2</span></div>
+          <div><code>!react oxygen</code><span>Thở oxy sau pha căng</span></div>
+          <div><code>!react wink</code><span>Nháy mắt cổ vũ đỏ-đen</span></div>
+          <div><code>!react cat-laugh / cat-sideeye / cat-cry</code><span>Meme mèo theo mood</span></div>
+          <div><code>!help</code><span>Xem hướng dẫn lệnh</span></div>
         </div>
         <div className="rail-divider" />
         <div className="rail-title rail-title-small">{observedGifts.length ? 'QUÀ ĐÃ NHẬN' : 'ĐANG CHỜ QUÀ'}</div>
@@ -503,7 +506,13 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
         <div className="mock-event-actions">
           <button disabled={occupied < 2} onClick={() => act('reaction-heart')}>💗 Gửi tim</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-wave')}>👋 Vẫy chào</button>
-          <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button><button onClick={() => act('join')}><Plus size={14} /> join</button><button onClick={() => act('leave')}><X size={14} /> leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-oxygen')}><img className="emote-art" src="/assets/emotes/1f637.svg" alt="" /> Thở oxy</button>
+          <button className="emote-wink" disabled={occupied < 2} title="Nháy mắt phong cách esports, không dùng nhận diện đội tuyển" onClick={() => act('reaction-wink')}><img className="emote-art" src="/assets/emotes/1f609.svg" alt="" /> Nháy mắt</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cat-laugh')}><img className="emote-art" src="/assets/emotes/1f639.svg" alt="" /> Mèo cười</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cat-sideeye')}><img className="emote-art" src="/assets/emotes/1f63c.svg" alt="" /> Mèo liếc</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-cat-cry')}><img className="emote-art" src="/assets/emotes/1f63f.svg" alt="" /> Mèo khóc</button>
+          <button onClick={() => act('join')}><Plus size={14} /> !join</button><button onClick={() => act('leave')}><X size={14} /> !leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
       </div>}
     </section>
 
@@ -522,7 +531,7 @@ function SeatTile({ seat, compact = false }: { seat: Seat; compact?: boolean }) 
     }
   }
   return <button className={`seat-tile ${seated ? 'occupied' : ''} ${seat.status === 'locked' ? 'locked' : ''} ${seat.status === 'inactive' ? 'inactive' : ''} ${compact ? 'seat-compact' : ''}`} onClick={lockSeat} aria-label={`Ghế ${seat.id}${seated ? `, ${seat.viewer?.name}` : seat.status === 'locked' ? ', đã khóa' : ', trống'}`} title={seated ? seat.viewer?.name : seat.status === 'locked' ? 'Nhấn để mở khóa' : 'Ghế trống · nhấn để khóa'}>
-    {bubble && <span key={bubble.id} className="seat-chat-bubble">{bubble.text}</span>}
+    {bubble && <span key={bubble.id} className={`seat-chat-bubble ${bubble.image ? 'has-emote-image' : ''} ${animation?.kind === 'wink' ? 'emote-wink-bubble' : ''}`}>{bubble.image && <img src={bubble.image} alt="" />}{bubble.image ? Array.from(bubble.text).slice(1).join('').trim() : bubble.text}</span>}
     <span className="seat-number">{String(seat.id).padStart(2, '0')}</span><span key={animation?.id ?? seat.viewer?.id} style={seated ? {
       backgroundPosition: `${((seat.id - 1) % 4) * 100 / 3}% ${Math.floor((seat.id - 1) / 4) * 50}%`,
     } : undefined} className={`seat-avatar ${seated ? `audience-sprite  animation-${animation?.kind ?? 'idle'}` : ''}`}>{seated ? null : seat.status === 'locked' ? <LockKeyhole size={14} /> : '✦'}</span><span className="seat-back" aria-hidden="true" /><span className="seat-name">{seat.viewer ? seat.viewer.name : seat.status === 'locked' ? 'Đã khóa' : 'Ghế trống'}</span>{seat.status === 'inactive' && <span className="inactive-mark">●</span>}
