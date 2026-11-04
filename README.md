@@ -51,8 +51,8 @@ Trong chế độ `Video URL`, dán mỗi URL vào một dòng để tạo playl
 Xem đặc tả sản phẩm tại [VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md](./VIEWING_PARTY_LIVE_PRD_TECH_SPEC.md).
 ### Tương tác giữa các ghế
 
-Các từ khóa chat `t1`, `geng`, `oxi`, `silent`, `clap` và `wave` sẽ kích hoạt reaction trực tiếp. Không cần thêm tiền tố lệnh. Trong Mock Event Deck, thêm hai khán giả để thử.
+Các từ khóa chat `t1`, `geng`, `chovy`, `sao`, `bakayaru`, `oxi`, `silent`, `clap` và `wave` sẽ kích hoạt reaction trực tiếp. Không cần thêm tiền tố lệnh. Trong Mock Event Deck, thêm hai khán giả để thử.
 
 ### Image attribution
 
-The T1, Gen.G, silent, and oxygen images in `public/assets/emotes` were supplied by the project owner. Confirm permission to use and redistribute them before publishing the app.
+The T1, Gen.G, Chovy, SAO, Bakayaru, silent, and oxygen images in `public/assets/emotes` were supplied by the project owner. Confirm permission to use and redistribute them before publishing the app.

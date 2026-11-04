@@ -7,7 +7,7 @@ import {
   SkipBack, SkipForward,
   Sparkles, Users, Volume2, VolumeX, WandSparkles, X,
 } from 'lucide-react'
-import { useStudioStore, type ChatEntry, type ProviderId, type ScreenMode, type StudioSettings } from './store'
+import { MAX_STANDING_VIEWERS, useStudioStore, type ChatEntry, type ProviderId, type ScreenMode, type StudioSettings } from './store'
 import { seatReducer, type Seat } from './domain/seatManager'
 import { connectProvider, stopProvider } from './liveProvider'
 import { TIKFINITY_DEFAULT } from './domain/providerConfig'
@@ -272,7 +272,7 @@ function SeatSettings() {
 }
 
 function ChatSettings({ settings, updateSettings }: { settings: StudioSettings; updateSettings: (patch: Partial<StudioSettings>) => void }) {
-  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>join</code><code>leave</code><code>seat 1–12</code><code>react heart 2</code><code>react wave 2</code><code>react cheer 2</code><code>help</code></div></section></div>
+  return <div className="single-settings"><section className="settings-panel"><div className="panel-title"><span className="step-number">03</span><div><h3>Chat & hiển thị</h3><p>Giới hạn tin hiển thị trong phiên, không lưu lịch sử.</p></div></div><ToggleRow title="Hiển thị chat trên canvas" detail="Ẩn rail khi dùng chat của phần mềm livestream" checked={settings.showChat} onChange={(showChat) => updateSettings({ showChat })} /><ToggleRow title="Hiện tên người xem" detail="Tắt để ẩn nickname ở ghế" checked={settings.showNicknames} onChange={(showNicknames) => updateSettings({ showNicknames })} /><ToggleRow title="Giảm chuyển động" detail="Giảm animation và hiệu ứng ánh sáng" checked={settings.reducedMotion} onChange={(reducedMotion) => updateSettings({ reducedMotion })} /><div className="command-list"><span className="eyebrow">LỆNH ĐANG BẬT</span><code>join</code><code>leave</code><code>seat 1–12</code><code>react heart 2</code><code>react wave 2</code><code>react cheer 2</code><code>chovy · sao · bakayaru</code><code>help</code></div></section></div>
 }
 
 function BroadcastSettings() {
@@ -290,7 +290,7 @@ function MiniTheater() {
 }
 
 function CanvasPage({ preview = false }: { preview?: boolean }) {
-  const { settings, seatState, chat, connection, viewerCount, likes, gifts, quietMode, highlightedGiftId, observedGifts, addMockViewer, sendMockGift, addMockLikes, addChat, setConnection, toggleQuietMode } = useStudioStore()
+  const { settings, seatState, standingViewers, chat, connection, viewerCount, likes, gifts, quietMode, highlightedGiftId, addMockViewer, sendMockGift, addMockLikes, addChat, setConnection, toggleQuietMode } = useStudioStore()
   const videoFile = useStudioStore((state) => state.videoFile)
   const [videoUrl, setVideoUrl] = useState('')
   const [mediaError, setMediaError] = useState(false)
@@ -504,22 +504,27 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
           <div className="rail-title"><MessageCircle size={13} /><span>LỆNH KHÁN GIẢ</span></div>
           <div><code>t1</code><span>Emote T1</span></div>
           <div><code>geng</code><span>Emote Gen.G</span></div>
+          <div><code>chovy</code><span>Emote Chovy</span></div>
+          <div><code>sao</code><span>Emote SAO</span></div>
+          <div><code>bakayaru</code><span>Emote Bakayaru</span></div>
           <div><code>oxi</code><span>Thở oxy</span></div>
           <div><code>silent</code><span>Biểu cảm silent</span></div>
           <div><code>clap</code><span>Vỗ tay</span></div>
           <div><code>wave</code><span>Vẫy chào</span></div>
         </div>
         <div className="rail-divider" />
-        <div className="rail-title rail-title-small">{observedGifts.length ? 'QUÀ ĐÃ NHẬN' : 'ĐANG CHỜ QUÀ'}</div>
-        <div className="gift-picks">{observedGifts.length ? observedGifts.slice(0, 6).map((gift) => <div key={gift.name} className="observed-gift"><span>🎁</span><b>{gift.name}</b><small>×{gift.count}</small></div>) : <p className="empty-gifts">Quà xuất hiện tại đây sau khi có gift event.</p>}</div>
-        <p className="gift-note">Danh sách chỉ gồm quà đã quan sát trong phiên này.</p>
+        <div className="standing-heading"><span>STANDING</span><b>{standingViewers.length}/{MAX_STANDING_VIEWERS}</b></div>
+        <div className="standing-grid" aria-label="Khán giả đang đứng">
+          {standingViewers.map((viewer, index) => <StandingTile key={viewer.id} viewer={viewer} index={index} showNickname={settings.showNicknames} />)}
+          {standingViewers.length === 0 && <span className="standing-empty">Chưa có khán giả đứng</span>}
+        </div>
       </aside>
 
       <div className="stage-column">
         <div className="stage-frame"><div className="marquee-lights" aria-hidden="true" />
           <div className="stage-topline"><span><i /> ĐANG PHÁT</span><span>{/^[\w.]+$/.test(settings.username) ? `@${settings.username}` : 'VIEWING PARTY'}</span></div>
           <div className={`screen-content mode-${settings.screenMode}`} style={{ width: `${settings.screenSize}%` }}>
-            {youtubeSrc ? <div key={`${playlistIndex}:${youtubeSrc}`} ref={youtubeContainerRef} className="youtube-player-host" /> : mediaSrc ? <video key={`${playlistIndex}:${mediaSrc}`} src={mediaSrc} controls playsInline muted={quietMode} onEnded={advancePlaylist} onError={() => setMediaError(true)} /> : settings.screenMode === 'screen-share' ? screenStream ? <><video ref={screenVideoRef} autoPlay playsInline muted /><div className="screen-share-controls"><span>Đang chiếu màn {activeScreenSource === 'primary' ? '1 · ưu tiên' : '2 · dự phòng'}{screenStreams.backup ? (activeScreenSource === 'backup' ? ' · màn 1 mất tín hiệu' : ' · màn 2 sẵn sàng') : ''}</span><button className="button button-quiet" onClick={() => void startScreenShare('primary')}>Chọn màn 1</button><button className="button button-quiet" onClick={() => void startScreenShare('backup')}>Chọn màn 2 dự phòng</button><button className="screen-share-stop" onClick={stopScreenShare}>Dừng chia sẻ</button></div></> : <div className="screen-share-prompt"><MonitorPlay size={30} /><b>Chọn hai màn hình để dự phòng</b><small>Chọn màn 1 làm nguồn chính, sau đó chọn màn 2. Mỗi lựa chọn cần được cấp quyền riêng trong trình duyệt.</small><button className="button button-primary" onClick={() => void startScreenShare('primary')}><MonitorPlay size={15} /> Chọn màn 1 ưu tiên</button><button className="button button-quiet" onClick={() => void startScreenShare('backup')}><MonitorPlay size={15} /> Chọn màn 2 dự phòng</button>{screenShareError && <small role="alert">{screenShareError}</small>}</div> : settings.screenMode === 'direct-url' && playlist.length === 0 ? <div className="playlist-empty"><Film size={30} /><b>Danh sách phát đang trống</b><small>Thêm mỗi URL video hoặc YouTube trên một dòng trong phần cài đặt.</small></div> : settings.screenMode === 'local-video' ? <label className="screen-upload"><Film size={30} /><b>{fileMessage || 'Chọn video trong phiên này'}</b><small>Video chỉ phát trong trình duyệt hiện tại</small><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label> : settings.screenMode === 'external' ? <div className="external-screen"><MonitorPlay size={32} /><b>Vùng ghép nội dung OBS</b><small>Đặt nguồn game/video bên dưới canvas trong phần mềm phát sóng.</small></div> : <div className="screen-art"><div className="screen-art-stars">✦　·　✧　·　✦</div><span className="screen-kicker">THEATER No. 01</span><div className="screen-title">Đêm xem<br /><em>chung</em></div><div className="screen-filmstrip"><span>◈</span><i /><span>◈</span><i /><span>◈</span></div><div className="screen-caption">MỘT CHIẾC RẠP · RẤT NHIỀU CẢM XÚC</div><div className="screen-orbit orbit-a" /><div className="screen-orbit orbit-b" /></div>}
+            {youtubeSrc ? <div key={`${playlistIndex}:${youtubeSrc}`} ref={youtubeContainerRef} className="youtube-player-host" /> : mediaSrc ? <video key={`${playlistIndex}:${mediaSrc}`} src={mediaSrc} controls autoPlay playsInline muted={quietMode} onEnded={advancePlaylist} onError={() => setMediaError(true)} /> : settings.screenMode === 'screen-share' ? screenStream ? <><video ref={screenVideoRef} autoPlay playsInline muted /><div className="screen-share-controls"><span>Đang chiếu màn {activeScreenSource === 'primary' ? '1 · ưu tiên' : '2 · dự phòng'}{screenStreams.backup ? (activeScreenSource === 'backup' ? ' · màn 1 mất tín hiệu' : ' · màn 2 sẵn sàng') : ''}</span><button className="button button-quiet" onClick={() => void startScreenShare('primary')}>Chọn màn 1</button><button className="button button-quiet" onClick={() => void startScreenShare('backup')}>Chọn màn 2 dự phòng</button><button className="screen-share-stop" onClick={stopScreenShare}>Dừng chia sẻ</button></div></> : <div className="screen-share-prompt"><MonitorPlay size={30} /><b>Chọn hai màn hình để dự phòng</b><small>Chọn màn 1 làm nguồn chính, sau đó chọn màn 2. Mỗi lựa chọn cần được cấp quyền riêng trong trình duyệt.</small><button className="button button-primary" onClick={() => void startScreenShare('primary')}><MonitorPlay size={15} /> Chọn màn 1 ưu tiên</button><button className="button button-quiet" onClick={() => void startScreenShare('backup')}><MonitorPlay size={15} /> Chọn màn 2 dự phòng</button>{screenShareError && <small role="alert">{screenShareError}</small>}</div> : settings.screenMode === 'direct-url' && playlist.length === 0 ? <div className="playlist-empty"><Film size={30} /><b>Danh sách phát đang trống</b><small>Thêm mỗi URL video hoặc YouTube trên một dòng trong phần cài đặt.</small></div> : settings.screenMode === 'local-video' ? <label className="screen-upload"><Film size={30} /><b>{fileMessage || 'Chọn video trong phiên này'}</b><small>Video chỉ phát trong trình duyệt hiện tại</small><input type="file" accept="video/*" onChange={(event) => onVideoFile(event.target.files?.[0])} /></label> : settings.screenMode === 'external' ? <div className="external-screen"><MonitorPlay size={32} /><b>Vùng ghép nội dung OBS</b><small>Đặt nguồn game/video bên dưới canvas trong phần mềm phát sóng.</small></div> : <div className="screen-art"><div className="screen-art-stars">✦　·　✧　·　✦</div><span className="screen-kicker">THEATER No. 01</span><div className="screen-title">Đêm xem<br /><em>chung</em></div><div className="screen-filmstrip"><span>◈</span><i /><span>◈</span><i /><span>◈</span></div><div className="screen-caption">MỘT CHIẾC RẠP · RẤT NHIỀU CẢM XÚC</div><div className="screen-orbit orbit-a" /><div className="screen-orbit orbit-b" /></div>}
             {(mediaError || (settings.screenMode === 'direct-url' && !youtubeSrc && !mediaSrc)) && <p className="media-error" role="alert">Không phát được video. Kiểm tra link YouTube hoặc URL video trực tiếp.</p>}
           </div>
           <div className="stage-controls"><span><Play size={13} fill="currentColor" /> SÂN KHẤU</span><span>{settings.screenMode === 'placeholder' ? 'Nội dung có quyền phát sóng' : settings.screenMode.replace('-', ' ').toUpperCase()}</span>{settings.screenMode === 'direct-url' && playlist.length > 1 && <div className="playlist-controls"><button title="Video trước" aria-label="Video trước" disabled={playlistIndex === 0} onClick={rewindPlaylist}><SkipBack size={14} /></button><small>{playlistIndex + 1} / {playlist.length}</small><button title="Video tiếp theo" aria-label="Video tiếp theo" disabled={playlistIndex >= playlist.length - 1} onClick={advancePlaylist}><SkipForward size={14} /></button></div>}<button title="Ẩn/hiện điều khiển" onClick={() => setShowControls(!showControls)}>{showControls ? <ChevronDown size={16} /> : <MoreHorizontal size={16} />}</button></div>
@@ -541,6 +546,9 @@ function CanvasPage({ preview = false }: { preview?: boolean }) {
           <button disabled={occupied < 2} onClick={() => act('reaction-cheer')}>👏 Cổ vũ</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-t1')}><img className="emote-art" src="/assets/emotes/t1.png" alt="" /> T1</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-geng')}><img className="emote-art" src="/assets/emotes/geng.png" alt="" /> Gen.G</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-chovy')}><img className="emote-art" src="/assets/emotes/chovy.png" alt="" /> Chovy</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-sao')}><img className="emote-art" src="/assets/emotes/sao.png" alt="" /> SAO</button>
+          <button disabled={occupied < 2} onClick={() => act('reaction-bakayaru')}><img className="emote-art" src="/assets/emotes/bakayaru.png" alt="" /> Bakayaru</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-silent')}><img className="emote-art" src="/assets/emotes/silent.png" alt="" /> Silent</button>
           <button disabled={occupied < 2} onClick={() => act('reaction-oxygen')}><img className="emote-art" src="/assets/emotes/oxygen.png" alt="" /> Oxygen</button>
           <button onClick={() => act('join')}><Plus size={14} /> !join</button><button onClick={() => act('leave')}><X size={14} /> !leave</button><button onClick={() => act('chat')}><MessageCircle size={14} /> Chat</button><button onClick={() => act('gift')}><Gift size={14} /> Gift</button><button onClick={() => act('like')}><Heart size={14} /> +100 like</button><button onClick={() => act('disconnect')}><Radio size={14} /> {connection === 'reconnecting' ? 'Nối lại' : 'Ngắt kết nối'}</button></div>
@@ -567,6 +575,18 @@ function SeatTile({ seat, compact = false }: { seat: Seat; compact?: boolean }) 
       backgroundPosition: `${((seat.id - 1) % 4) * 100 / 3}% ${Math.floor((seat.id - 1) / 4) * 50}%`,
     } : undefined} className={`seat-avatar ${seated ? `audience-sprite  animation-${animation?.kind ?? 'idle'}` : ''}`}>{seated ? null : seat.status === 'locked' ? <LockKeyhole size={14} /> : '✦'}</span><span className="seat-back" aria-hidden="true" /><span className="seat-name">{seat.viewer ? seat.viewer.name : seat.status === 'locked' ? 'Đã khóa' : 'Ghế trống'}</span>{seat.status === 'inactive' && <span className="inactive-mark">●</span>}
   </button>
+}
+
+function StandingTile({ viewer, index, showNickname }: { viewer: { id: string; name: string; avatar: string }; index: number; showNickname: boolean }) {
+  const bubble = useStudioStore((state) => state.seatBubbles[viewer.id])
+  const animation = useStudioStore((state) => state.seatAnimations[viewer.id])
+  return <div className={`standing-tile ${index % 4 === 0 ? 'standing-edge-left' : index % 4 === 3 ? 'standing-edge-right' : ''}`} title={showNickname ? viewer.name : 'Khán giả đang đứng'}>
+    {bubble && <span key={bubble.id} className={`seat-chat-bubble standing-bubble ${bubble.image ? 'has-emote-image' : ''} ${bubble.image ? `emote-${animation?.kind}-bubble` : ''}`}>{bubble.image && <img src={bubble.image} alt="" />}{bubble.image ? Array.from(bubble.text).slice(1).join('').trim() : bubble.text}</span>}
+    <span className="standing-motion" style={{ animationDelay: `${(index % 7) * -0.8}s` }}>
+      <span key={animation?.id ?? viewer.id} className={`seat-avatar standing-avatar animation-${animation?.kind ?? 'idle'}`} aria-hidden="true">{viewer.avatar}</span>
+    </span>
+    <span className="standing-name">{showNickname ? viewer.name : 'Khán giả'}</span>
+  </div>
 }
 
 function ChatRail({ chat, quietMode, highlightedGiftId }: { chat: ChatEntry[]; quietMode: boolean; highlightedGiftId: string | null }) {

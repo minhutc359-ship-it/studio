@@ -53,37 +53,35 @@ export interface SeatBubble {
   image?: string
 }
 
-export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart' | 'oxygen' | 't1' | 'geng' | 'silent'
+export type SeatAnimation = 'enter' | 'talk' | 'cheer' | 'gift' | 'wave' | 'heart' | 'oxygen' | 't1' | 'geng' | 'silent' | 'chovy' | 'sao' | 'bakayaru'
+export const MAX_STANDING_VIEWERS = 20
 
 const reactionIcons: Record<Reaction, string> = {
   heart: '💗', cheer: '👏', wave: '👋', oxygen: '😷', t1: '🔴', geng: '🟡', silent: '🤫',
+  chovy: '⭐', sao: '★', bakayaru: '😠',
 }
 const reactionImages: Partial<Record<Reaction, string>> = {
   oxygen: '/assets/emotes/oxygen.png', t1: '/assets/emotes/t1.png',
   geng: '/assets/emotes/geng.png', silent: '/assets/emotes/silent.png',
+  chovy: '/assets/emotes/chovy.png', sao: '/assets/emotes/sao.png',
+  bakayaru: '/assets/emotes/bakayaru.png',
 }
 const reactionLabels: Record<Reaction, string> = {
   heart: 'gửi tim', cheer: 'cổ vũ', wave: 'vẫy chào', oxygen: 'thở oxy',
-  t1: 'T1', geng: 'Gen.G', silent: 'silent',
-}
-
-export interface ObservedGift {
-  name: string
-  count: number
-  lastReceivedAt: number
+  t1: 'T1', geng: 'Gen.G', silent: 'silent', chovy: 'Chovy', sao: 'SAO', bakayaru: 'Bakayaru',
 }
 
 interface StudioState {
   settings: StudioSettings
   videoFile?: File
   seatState: SeatState
+  standingViewers: Viewer[]
   mockAudienceIds: string[]
   chat: ChatEntry[]
   seatBubbles: Record<string, SeatBubble>
-  reactionCooldowns: Record<number, number>
+  reactionCooldowns: Record<string, number>
   seatAnimations: Record<string, { id: string; kind: SeatAnimation }>
   highlightedGiftId: string | null
-  observedGifts: ObservedGift[]
   connection: 'waiting' | 'connected' | 'reconnecting' | 'connecting' | 'error'
   connectionDetail: string
   resetSession: () => void
@@ -125,9 +123,41 @@ function entry(viewer: Viewer, text: string, kind: ChatEntry['kind'] = 'chat'): 
   return { id: `${Date.now()}-${Math.random()}`, name: viewer.name, avatar: viewer.avatar, text: text.slice(0, 500), kind, time: timeLabel() }
 }
 
+function fillStandingFromQueue(seatState: SeatState, standingViewers: Viewer[]) {
+  const capacity = MAX_STANDING_VIEWERS - standingViewers.length
+  const joining = seatState.queue.slice(0, capacity)
+  return {
+    seatState: { ...seatState, queue: seatState.queue.slice(joining.length) },
+    standingViewers: [...standingViewers, ...joining.map(({ id, name, avatar }) => ({ id, name, avatar }))],
+  }
+}
+
+function removeAudienceViewer(seatState: SeatState, standingViewers: Viewer[], viewerId: string) {
+  const leavingSeat = seatState.seats.find((seat) => seat.viewer?.id === viewerId)
+  const nextStanding = standingViewers.filter((viewer) => viewer.id !== viewerId)
+  let nextSeatState = seatState
+
+  if (leavingSeat && standingViewers.length > 0) {
+    const now = Date.now()
+    const queue = seatState.queue.filter((viewer) => now - viewer.requestedAt < 600_000)
+    const promoted = standingViewers.find((viewer) => viewer.id !== viewerId)
+    if (promoted) nextStanding.splice(nextStanding.findIndex((viewer) => viewer.id === promoted.id), 1)
+    const emptied = seatReducer({ ...seatState, queue: [] }, { type: 'leave', viewerId, now })
+    nextSeatState = promoted
+      ? { ...seatReducer(emptied, { type: 'join', viewer: promoted, preferredSeat: leavingSeat.id, now }), queue }
+      : { ...emptied, queue }
+  } else {
+    nextSeatState = seatReducer(seatState, { type: 'leave', viewerId })
+  }
+
+  const filled = fillStandingFromQueue(nextSeatState, nextStanding)
+  return filled
+}
+
 export const useStudioStore = create<StudioState>((set, get) => ({
   settings: readSettings(),
   seatState: createSeatState(),
+  standingViewers: [],
   mockAudienceIds: [],
   chat: [
     { id: 'welcome-1', name: 'Rạp trưởng', avatar: '🎬', text: 'Rạp đã mở cửa. Gõ !join để chọn ghế nhé!', kind: 'system', time: timeLabel() },
@@ -137,10 +167,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   reactionCooldowns: {},
   seatAnimations: {},
   highlightedGiftId: null,
-  observedGifts: [],
   connection: 'waiting',
   connectionDetail: '',
-  resetSession: () => set({ seatState: createSeatState(), mockAudienceIds: [], chat: [], seatBubbles: {}, reactionCooldowns: {}, seatAnimations: {}, highlightedGiftId: null, observedGifts: [], viewerCount: 0, likes: 0, gifts: 0 }),
+  resetSession: () => set({ seatState: createSeatState(), standingViewers: [], mockAudienceIds: [], chat: [], seatBubbles: {}, reactionCooldowns: {}, seatAnimations: {}, highlightedGiftId: null, viewerCount: 0, likes: 0, gifts: 0 }),
   viewerCount: 0,
   likes: 0,
   gifts: 0,
@@ -155,40 +184,52 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     seatState: seatReducer(state.seatState, { type: 'touch', viewerId }),
   })),
   leaveViewer: (viewerId) => set((state) => {
-    const leavingSeat = state.seatState.seats.find((seat) => seat.viewer?.id === viewerId)
-    const seatState = seatReducer(state.seatState, { type: 'leave', viewerId })
+    const { seatState, standingViewers } = removeAudienceViewer(state.seatState, state.standingViewers, viewerId)
     const seatBubbles = { ...state.seatBubbles }
     const seatAnimations = { ...state.seatAnimations }
     const reactionCooldowns = { ...state.reactionCooldowns }
     delete seatBubbles[viewerId]
     delete seatAnimations[viewerId]
-    if (leavingSeat) delete reactionCooldowns[leavingSeat.id]
-    return { seatState, seatBubbles, seatAnimations, reactionCooldowns }
+    delete reactionCooldowns[viewerId]
+    return { seatState, standingViewers, seatBubbles, seatAnimations, reactionCooldowns }
   }),
   addChat: (viewer, text, respond = true) => {
     const state = get()
     const parsedCommand = parseCommand(text)
     const command = parsedCommand?.kind === 'leave' && state.settings.provider !== 'mock' ? null : parsedCommand
     let seatState = state.seatState
+    let standingViewers = state.standingViewers
     let response: string | undefined
-    let reactionSeats: typeof seatState.seats = []
-    let reactionSource: number | undefined
+    let reactionTargets: Viewer[] = []
+    let reactionSource: string | undefined
     let kind: ChatEntry['kind'] = 'chat'
 
     if (command?.kind === 'join') {
       seatState = seatReducer(seatState, { type: 'join', viewer })
+      const assigned = seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
+      const alreadyStanding = standingViewers.some((standing) => standing.id === viewer.id)
+      if (assigned) standingViewers = standingViewers.filter((standing) => standing.id !== viewer.id)
+      else if (alreadyStanding) seatState = { ...seatState, queue: seatState.queue.filter((queued) => queued.id !== viewer.id) }
+      const filled = fillStandingFromQueue(seatState, standingViewers)
+      seatState = filled.seatState
+      standingViewers = filled.standingViewers
       response = seatState.seats.some((seat) => seat.viewer?.id === viewer.id) ? 'đã vào rạp 🍿'
-        : seatState.queue.some((queued) => queued.id === viewer.id) ? 'đã vào hàng chờ ⏳' : 'hàng chờ đã đầy'
+        : standingViewers.some((standing) => standing.id === viewer.id) ? 'đã vào khu standing 🚶'
+          : seatState.queue.some((queued) => queued.id === viewer.id) ? 'đã vào hàng chờ ⏳' : 'hàng chờ đã đầy'
       kind = 'system'
     } else if (command?.kind === 'leave') {
       const hadSeat = seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
-      seatState = seatReducer(seatState, { type: 'leave', viewerId: viewer.id })
-      response = hadSeat ? 'đã rời ghế 👋' : 'đã rời hàng chờ'
+      const wasStanding = standingViewers.some((standing) => standing.id === viewer.id)
+      const removed = removeAudienceViewer(seatState, standingViewers, viewer.id)
+      seatState = removed.seatState
+      standingViewers = removed.standingViewers
+      response = hadSeat ? 'đã rời ghế 👋' : wasStanding ? 'đã rời khu standing 👋' : 'đã rời hàng chờ'
       kind = 'system'
     } else if (command?.kind === 'seat') {
       const before = seatState
       seatState = seatReducer(seatState, { type: 'join', viewer, preferredSeat: command.seatId })
       const assigned = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
+      if (assigned) standingViewers = standingViewers.filter((standing) => standing.id !== viewer.id)
       const requestedSeat = seatState.seats.find((seat) => seat.id === command.seatId)
       response = assigned?.id === command.seatId ? `đã chọn ghế ${command.seatId}`
         : requestedSeat?.status === 'locked' ? `ghế ${command.seatId} đang khóa`
@@ -197,17 +238,18 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       kind = 'system'
     } else if (command?.kind === 'react') {
       seatState = seatReducer(seatState, { type: 'touch', viewerId: viewer.id })
-      const source = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)
+      const seatedSource = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.viewer
+      const source = seatedSource ?? standingViewers.find((standing) => standing.id === viewer.id)
       const target = seatState.seats.find((seat) => seat.id === command.seatId)
       if (!source) response = command.seatId
-        ? 'Gõ !join để có ghế rồi gửi biểu cảm.'
+        ? 'Gõ !join để tham gia rạp rồi gửi biểu cảm.'
         : `${reactionIcons[command.reaction]} ${reactionLabels[command.reaction]} cả rạp`
-      else if (target?.id === source.id) response = 'Hãy chọn ghế của một khán giả khác.'
+      else if (target?.viewer?.id === source.id) response = 'Hãy chọn ghế của một khán giả khác.'
       else if (command.seatId && !target?.viewer) response = `Ghế ${command.seatId} chưa có người.`
       else {
         if (Date.now() - (state.reactionCooldowns[source.id] ?? -Infinity) < 2500) return
         reactionSource = source.id
-        reactionSeats = target ? [source, target] : [source]
+        reactionTargets = [source, ...(target?.viewer ? [target.viewer] : [])]
         response = `${reactionIcons[command.reaction]} ${reactionLabels[command.reaction]} ${target ? `ghế ${target.id}` : 'cả rạp'}`
       }
       kind = 'reaction'
@@ -221,21 +263,26 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
     const nextChat = [...state.chat, entry(viewer, text, command ? kind : 'chat')]
     if (response && respond) nextChat.push(entry({ ...viewer, id: 'system', name: 'Rạp trưởng', avatar: '🎬' }, response, 'system'))
-    const seated = !command && seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
+    const audienceMember = seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
+      || standingViewers.some((standing) => standing.id === viewer.id)
     const bubbleId = `${viewer.id}-${Date.now()}`
     const previousSeatId = state.seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.id
     const currentSeatId = seatState.seats.find((seat) => seat.viewer?.id === viewer.id)?.id
     const newlySeated = previousSeatId === undefined && currentSeatId !== undefined
     const movedSeat = previousSeatId !== undefined && currentSeatId !== previousSeatId
-    const seatEntryBubble = (newlySeated || movedSeat) && (command?.kind === 'join' || command?.kind === 'seat')
-    const animationKind: SeatAnimation | undefined = newlySeated || movedSeat ? 'enter' : seated ? 'talk' : undefined
+    const previouslyInAudience = state.seatState.seats.some((seat) => seat.viewer?.id === viewer.id)
+      || state.standingViewers.some((standing) => standing.id === viewer.id)
+    const joinedAudience = !previouslyInAudience && audienceMember
+    const audienceEntryBubble = (newlySeated || movedSeat || joinedAudience) && (command?.kind === 'join' || command?.kind === 'seat')
+    const animationKind: SeatAnimation | undefined = newlySeated || joinedAudience ? 'enter' : audienceMember && !command ? 'talk' : undefined
     const animationId = `${viewer.id}-${Date.now()}-${Math.random()}`
     const isMockLeave = command?.kind === 'leave' && state.mockAudienceIds.includes(viewer.id)
     set({
       seatState,
+      standingViewers,
       chat: nextChat.slice(-24),
       ...(isMockLeave ? { mockAudienceIds: state.mockAudienceIds.filter((viewerId) => viewerId !== viewer.id), viewerCount: Math.max(0, state.viewerCount - 1) } : {}),
-      ...(seated || seatEntryBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (seatEntryBubble ? response : text)?.slice(0, 500) ?? '' } } } : {}),
+      ...(audienceMember || audienceEntryBubble ? { seatBubbles: { ...state.seatBubbles, [viewer.id]: { id: bubbleId, text: (audienceEntryBubble ? response : text)?.slice(0, 500) ?? '' } } } : {}),
       ...(animationKind ? { seatAnimations: { ...state.seatAnimations, [viewer.id]: { id: animationId, kind: animationKind } } } : {}),
     })
     if (command?.kind === 'react' && reactionSource !== undefined) {
@@ -245,26 +292,26 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         reactionCooldowns: { ...current.reactionCooldowns, [source]: Date.now() },
         seatBubbles: {
           ...current.seatBubbles,
-          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, {
-            id: `${animationId}:bubble:${seat.viewer!.id}`,
+          ...Object.fromEntries(reactionTargets.map((targetViewer) => [targetViewer.id, {
+            id: `${animationId}:bubble:${targetViewer.id}`,
             text: reactionIcons[reaction],
             image: reactionImages[reaction],
           }])),
         },
         seatAnimations: {
           ...current.seatAnimations,
-          ...Object.fromEntries(reactionSeats.map((seat) => [seat.viewer!.id, { id: `${animationId}:animation:${seat.viewer!.id}`, kind: reaction }])),
+          ...Object.fromEntries(reactionTargets.map((targetViewer) => [targetViewer.id, { id: `${animationId}:animation:${targetViewer.id}`, kind: reaction }]))
         },
       }))
-      for (const seat of reactionSeats) {
-        const id = seat.viewer!.id
+      for (const targetViewer of reactionTargets) {
+        const id = targetViewer.id
         const seatBubbleId = `${animationId}:bubble:${id}`
         const seatAnimationId = `${animationId}:animation:${id}`
         window.setTimeout(() => get().clearSeatBubble(id, seatBubbleId), 3600)
         window.setTimeout(() => get().clearSeatAnimation(id, seatAnimationId), 2000)
       }
     }
-    if (seated || seatEntryBubble) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
+    if (audienceMember || audienceEntryBubble) window.setTimeout(() => get().clearSeatBubble(viewer.id, bubbleId), 3600)
     if (animationKind) window.setTimeout(() => get().clearSeatAnimation(viewer.id, animationId), animationKind === 'talk' ? 1500 : 1400)
   },
   clearSeatBubble: (viewerId, bubbleId) => set((state) => {
@@ -293,6 +340,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const selectedEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)]
     const activeViewer = state.mockAudienceIds
       .map((viewerId) => state.seatState.seats.find((seat) => seat.viewer?.id === viewerId)?.viewer
+        ?? state.standingViewers.find((viewer) => viewer.id === viewerId)
         ?? state.seatState.queue.find((viewer) => viewer.id === viewerId))
       .filter((viewer): viewer is Viewer => Boolean(viewer))
     const actor = activeViewer[Math.floor(Math.random() * activeViewer.length)] ?? createMockViewer()
@@ -317,8 +365,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     get().addChat(actor, messages[Math.floor(Math.random() * messages.length)] ?? 'Xin chào!', false)
   },
   sendMockGift: () => {
-    const seatedViewer = get().seatState.seats.find((seat) => seat.viewer)?.viewer
-    const viewer: Viewer = seatedViewer ?? createMockViewer()
+    const state = get()
+    const audienceViewer = state.seatState.seats.find((seat) => seat.viewer)?.viewer ?? state.standingViewers[0]
+    const viewer: Viewer = audienceViewer ?? createMockViewer()
     get().addGiftEvent(viewer, 'Bắp Rang', 10)
   },
   addGiftEvent: (viewer, giftName, count = 1) => {
@@ -326,21 +375,19 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     const settledCount = Math.max(1, Math.min(100_000, Math.floor(count) || 1))
     const giftEntry = entry(viewer, `đã gửi ${normalizedName} ×${settledCount}`, 'gift')
     const giftAnimationId = `${viewer.id}-${Date.now()}-${Math.random()}`
-    const seatedIds = get().seatState.seats.flatMap((seat) => seat.viewer ? [seat.viewer.id] : [])
-    const animationTargets = seatedIds.includes(viewer.id) ? [viewer.id] : seatedIds
+    const state = get()
+    const audienceIds = [
+      ...state.seatState.seats.flatMap((seat) => seat.viewer ? [seat.viewer.id] : []),
+      ...state.standingViewers.map((standing) => standing.id),
+    ]
+    const animationTargets = audienceIds.includes(viewer.id) ? [viewer.id] : audienceIds
     const targetAnimationIds = new Map(animationTargets.map((viewerId) => [viewerId, `${giftAnimationId}:${viewerId}`]))
-    const receivedAt = Date.now()
     set((state) => {
-      const observed = state.observedGifts.find((gift) => gift.name === normalizedName)
-      const observedGifts = observed
-        ? state.observedGifts.map((gift) => gift.name === normalizedName ? { ...gift, count: gift.count + settledCount, lastReceivedAt: receivedAt } : gift)
-        : [...state.observedGifts, { name: normalizedName, count: settledCount, lastReceivedAt: receivedAt }]
       return {
         seatState: seatReducer(state.seatState, { type: 'touch', viewerId: viewer.id }),
         gifts: state.gifts + 1,
         chat: [...state.chat, giftEntry].slice(-24),
         highlightedGiftId: giftEntry.id,
-        observedGifts: observedGifts.sort((left, right) => right.lastReceivedAt - left.lastReceivedAt).slice(0, 8),
         seatAnimations: {
           ...state.seatAnimations,
           ...Object.fromEntries(animationTargets.map((viewerId) => [viewerId, { id: targetAnimationIds.get(viewerId)!, kind: viewerId === viewer.id ? 'gift' : 'cheer' }]))

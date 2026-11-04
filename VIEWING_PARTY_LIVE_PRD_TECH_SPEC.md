@@ -216,6 +216,8 @@ Options: volume, mute, poster, fit contain/cover (mặc định contain), overla
 - Lock/unlock từng ghế, đặt ghế VIP, pin người xem, swap/clear, reset all.
 - Inactive threshold (ví dụ 5 phút) chỉ thay đổi **nhãn**; `reclaimMode = manual | opt_in_timeout` (mặc định **manual**).
 - Queue capacity 100 (có thể chỉnh 20–500), TTL 10 phút, max 1 ghế/viewer.
+- Giữ 12 ghế; viewer overflow vào khu standing tối đa 20 người, nhận chat/reaction/quà và được ưu tiên lên ghế trống theo FIFO trước hàng chờ; sau đó mới vào queue.
+- Khu standing chỉ nhận viewer có định danh từ `!join` hoặc provider join event; không suy ra danh tính từ viewer count.
 - Option: chỉ người comment `!join` mới được vào hàng đợi; allow auto seating gift join; ưu tiên VIP do chủ phòng cấu hình.
 - Preview drag/click để gán mock viewer.
 

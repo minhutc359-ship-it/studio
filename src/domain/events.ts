@@ -1,4 +1,4 @@
-export type Reaction = 'heart' | 'cheer' | 'wave' | 'oxygen' | 't1' | 'geng' | 'silent'
+export type Reaction = 'heart' | 'cheer' | 'wave' | 'oxygen' | 't1' | 'geng' | 'silent' | 'chovy' | 'sao' | 'bakayaru'
 
 export type Command =
   | { kind: 'join' }
@@ -8,10 +8,11 @@ export type Command =
   | { kind: 'help' }
 
 const isReaction = (value: string | undefined): value is Reaction | 'clap' | 'oxi' =>
-  value !== undefined && ['heart', 'cheer', 'clap', 'wave', 'oxygen', 'oxi', 't1', 'geng', 'silent'].includes(value)
+  value !== undefined && ['heart', 'cheer', 'clap', 'wave', 'oxygen', 'oxi', 't1', 'geng', 'silent', 'chovy', 'sao', 'bakayaru'].includes(value)
 
 const bareReactionAliases: Record<string, Reaction> = {
   t1: 't1', geng: 'geng', oxi: 'oxygen', silent: 'silent', clap: 'cheer', wave: 'wave',
+  chovy: 'chovy', sao: 'sao', bakayaru: 'bakayaru',
 }
 
 export function parseCommand(message: string): Command | null {

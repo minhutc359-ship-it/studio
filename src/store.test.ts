@@ -20,6 +20,71 @@ describe('chat seat bubbles', () => {
     expect(state.seatBubbles[viewer.id]?.text).toBe('đã vào rạp 🍿')
   })
 
+  it('places overflow viewers in standing and caps the area at 20', () => {
+    const viewers = Array.from({ length: 34 }, (_, index) => ({
+      id: `standing-${index}`,
+      name: `Standing ${index}`,
+      avatar: '🎟️',
+    }))
+    for (const viewer of viewers) useStudioStore.getState().addChat(viewer, 'join', false)
+
+    const state = useStudioStore.getState()
+    expect(state.seatState.seats.filter((seat) => seat.viewer)).toHaveLength(12)
+    expect(state.standingViewers).toHaveLength(20)
+    expect(state.seatState.queue.map((viewer) => viewer.id)).toEqual(['standing-32', 'standing-33'])
+    expect(state.seatBubbles['standing-12']?.text).toBe('đã vào khu standing 🚶')
+
+    useStudioStore.getState().addChat(viewers[12]!, 'react heart', false)
+    expect(useStudioStore.getState().seatAnimations['standing-12']?.kind).toBe('heart')
+    expect(useStudioStore.getState().seatBubbles['standing-12']?.text).toBe('💗')
+  })
+
+  it('refills standing from the queue when a standing viewer leaves', () => {
+    const viewers = Array.from({ length: 33 }, (_, index) => ({
+      id: `overflow-${index}`,
+      name: `Overflow ${index}`,
+      avatar: '🎟️',
+    }))
+    for (const viewer of viewers) useStudioStore.getState().addChat(viewer, 'join', false)
+
+    useStudioStore.getState().addChat(viewers[12]!, '!leave', false)
+
+    const state = useStudioStore.getState()
+    expect(state.standingViewers.some((viewer) => viewer.id === 'overflow-12')).toBe(false)
+    expect(state.standingViewers.some((viewer) => viewer.id === 'overflow-32')).toBe(true)
+    expect(state.seatState.queue).toHaveLength(0)
+  })
+
+  it('keeps repeat join commands idempotent for a standing viewer', () => {
+    const viewers = Array.from({ length: 13 }, (_, index) => ({
+      id: `repeat-join-${index}`,
+      name: `Repeat ${index}`,
+      avatar: '🎟️',
+    }))
+    for (const viewer of viewers) useStudioStore.getState().addChat(viewer, 'join', false)
+
+    useStudioStore.getState().addChat(viewers[12]!, 'join', false)
+    expect(useStudioStore.getState().standingViewers.filter((viewer) => viewer.id === 'repeat-join-12')).toHaveLength(1)
+    expect(useStudioStore.getState().seatState.queue).toHaveLength(0)
+
+    useStudioStore.getState().leaveViewer('repeat-join-0')
+    expect(useStudioStore.getState().standingViewers).toHaveLength(0)
+    expect(useStudioStore.getState().seatState.seats[0]?.viewer?.id).toBe('repeat-join-12')
+  })
+
+  it('animates gifts on the standing viewer who sent them', () => {
+    const viewers = Array.from({ length: 13 }, (_, index) => ({
+      id: `gift-stand-${index}`,
+      name: `Gift Stand ${index}`,
+      avatar: '🎟️',
+    }))
+    for (const viewer of viewers) useStudioStore.getState().addChat(viewer, 'join', false)
+
+    useStudioStore.getState().addGiftEvent(viewers[12]!, 'Bắp Rang')
+
+    expect(useStudioStore.getState().seatAnimations['gift-stand-12']?.kind).toBe('gift')
+  })
+
   it('executes a bare react command from a seated viewer', () => {
     const viewer = { id: 'viewer-2', name: 'Viewer Two', avatar: '🎟️' }
     const store = useStudioStore.getState()
@@ -44,6 +109,17 @@ describe('chat seat bubbles', () => {
     const state = useStudioStore.getState()
     expect(state.seatBubbles[viewer.id]?.image).toBe('/assets/emotes/t1.png')
     expect(state.seatAnimations[viewer.id]?.kind).toBe('t1')
+  })
+
+  it('renders the supplied images and animation kinds for the new emotes', () => {
+    for (const [index, emote] of (['chovy', 'sao', 'bakayaru'] as const).entries()) {
+      const viewer = { id: `viewer-new-emote-${index}`, name: `Viewer ${emote}`, avatar: '🎟️' }
+      useStudioStore.getState().addChat(viewer, 'join', false)
+      useStudioStore.getState().addChat(viewer, emote, false)
+      const state = useStudioStore.getState()
+      expect(state.seatBubbles[viewer.id]?.image).toBe(`/assets/emotes/${emote}.png`)
+      expect(state.seatAnimations[viewer.id]?.kind).toBe(emote)
+    }
   })
 
   it('shows the full normalized WebSocket chat text in the seated viewer bubble', () => {

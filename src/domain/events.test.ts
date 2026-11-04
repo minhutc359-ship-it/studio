@@ -24,6 +24,13 @@ describe('parseCommand', () => {
     expect(parseCommand('!react silent 3')).toEqual({ kind: 'react', reaction: 'silent', seatId: 3 })
   })
 
+  it('parses Chovy, SAO, and Bakayaru emotes as bare words and react commands', () => {
+    for (const emote of ['chovy', 'sao', 'bakayaru'] as const) {
+      expect(parseCommand(emote)).toEqual({ kind: 'react', reaction: emote })
+      expect(parseCommand(`!react ${emote}`)).toEqual({ kind: 'react', reaction: emote })
+    }
+  })
+
   it('accepts clap as an alias for the cheer reaction', () => {
     expect(parseCommand('react clap')).toEqual({ kind: 'react', reaction: 'cheer' })
   })
